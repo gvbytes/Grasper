@@ -1,5 +1,5 @@
 import { createTool } from "@cline/sdk";
-import type { AgentPlugin } from "@cline/sdk";
+import type { AgentHooks, AgentPlugin, AgentTool } from "@cline/sdk";
 import { z } from "zod";
 import { appendEvent } from "../lib/store.js";
 import {
@@ -14,6 +14,9 @@ import {
 
 const FILE_WRITE_TOOLS = new Set(["editor", "apply_patch"]);
 
+type BeforeToolContext = Parameters<NonNullable<AgentHooks["beforeTool"]>>[0];
+type SetupApi = { registerTool: (tool: AgentTool) => void };
+
 export function createGrasperPlugin(): AgentPlugin {
   const state: GuardState = newGuardState();
 
@@ -21,7 +24,7 @@ export function createGrasperPlugin(): AgentPlugin {
     name: "grasper",
     manifest: { capabilities: ["hooks", "tools"] },
 
-    setup(api) {
+    setup(api: SetupApi) {
       api.registerTool(
         createTool({
           name: "log_decision",
@@ -35,7 +38,7 @@ export function createGrasperPlugin(): AgentPlugin {
             reason: z.string().describe("Why you chose it, in one or two plain sentences."),
             package_name: z.string().optional().describe("The package name when the topic is package."),
           }),
-          execute: async (input) => {
+          execute: async (input: { topic: string; choice: string; reason: string; package_name?: string }) => {
             const decision = {
               topic: input.topic,
               choice: input.choice,
@@ -55,7 +58,7 @@ export function createGrasperPlugin(): AgentPlugin {
     },
 
     hooks: {
-      beforeTool: async ({ toolCall, input }) => {
+      beforeTool: async ({ toolCall, input }: BeforeToolContext) => {
         // A hook must never throw. On error, log it and allow the call.
         try {
           const toolName = toolCall.toolName;
