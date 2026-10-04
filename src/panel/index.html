@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Grasper panel</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: ui-monospace, Menlo, monospace; background: #0d1117; color: #e6edf3; }
+  header { display: flex; align-items: center; gap: 24px; padding: 16px 24px; background: #161b22; border-bottom: 1px solid #30363d; }
+  h1 { font-size: 20px; margin: 0; }
+  h1 .g { color: #58a6ff; }
+  #score { font-size: 42px; font-weight: 700; margin-left: auto; }
+  #score small { font-size: 13px; color: #8b949e; display: block; text-align: center; }
+  .score-low { color: #f85149; } .score-mid { color: #d29922; } .score-high { color: #3fb950; }
+  main { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding: 16px 24px; }
+  section { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 12px 16px; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 1px; color: #8b949e; margin: 4px 0 10px; }
+  .event { padding: 4px 8px; border-radius: 4px; margin: 3px 0; font-size: 13px; background: #0d1117; }
+  .event.block { background: #3d1214; color: #ff7b72; font-weight: 700; border-left: 3px solid #f85149; }
+  .event.warn { background: #2d2608; color: #e3b341; border-left: 3px solid #d29922; }
+  .event.decision { border-left: 3px solid #58a6ff; }
+  .ts { color: #6e7681; font-size: 11px; margin-right: 6px; }
+  .finding { padding: 6px 8px; margin: 4px 0; background: #0d1117; border-radius: 4px; font-size: 13px; }
+  .sev { font-weight: 700; } .sev.high { color: #f85149; } .sev.medium { color: #d29922; } .sev.low { color: #8b949e; }
+  .fixed { text-decoration: line-through; opacity: 0.6; }
+  .lesson { padding: 8px; margin: 6px 0; background: #0d1117; border-radius: 6px; }
+  .lesson h3 { margin: 2px 0 6px; font-size: 14px; }
+  .lesson .body { font-size: 13px; white-space: pre-wrap; color: #c9d1d9; }
+  .refs { font-size: 12px; color: #58a6ff; margin: 4px 0; }
+  .rcheck { font-size: 12px; color: #8b949e; font-style: italic; margin: 4px 0; }
+  .q { font-size: 13px; color: #d2a8ff; margin: 6px 0 2px; }
+  textarea { width: 100%; min-height: 54px; background: #0d1117; color: #e6edf3; border: 1px solid #30363d; border-radius: 4px; font-family: inherit; font-size: 13px; padding: 6px; }
+  button { background: #238636; color: #fff; border: 0; border-radius: 4px; padding: 6px 14px; font-size: 13px; cursor: pointer; margin-top: 4px; }
+  button:disabled { opacity: 0.5; }
+  .grade { font-size: 13px; margin-top: 6px; padding: 6px; border-radius: 4px; background: #12261e; border: 1px solid #238636; }
+  .grade .missed { color: #ff7b72; } .grade .right { color: #3fb950; }
+  .badge { font-size: 11px; padding: 1px 6px; border-radius: 8px; background: #30363d; margin-left: 6px; }
+  #modeBtn { background: #30363d; }
+</style>
+</head>
+<body>
+<header>
+  <h1><span class="g">Grasper</span> panel</h1>
+  <button id="modeBtn" onclick="toggleMode()">mode: live</button>
+  <div id="score">–<small>readiness</small></div>
+</header>
+<main>
+  <section>
+    <h2>Live event log</h2>
+    <div id="events"></div>
+  </section>
+  <section>
+    <h2>Why-log: the agent's decisions</h2>
+    <div id="decisions"></div>
+  </section>
+  <section>
+    <h2>Risk findings</h2>
+    <div id="findings"></div>
+  </section>
+  <section>
+    <h2>Lessons and explain-back</h2>
+    <div id="lessons"></div>
+  </section>
+</main>
+<script>
+let mode = "live";
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+async function refresh() {
+  const state = await (await fetch("/api/state")).json();
+  mode = state.mode;
+  document.getElementById("modeBtn").textContent = "mode: " + mode;
+
+  const scoreEl = document.getElementById("score");
+  scoreEl.innerHTML = state.score + '<small>readiness</small>';
+  scoreEl.className = state.score < 40 ? "score-low" : state.score < 75 ? "score-mid" : "score-high";
+
+  document.getElementById("events").innerHTML = state.events.slice(-30).reverse().map((e) =>
+    `<div class="event ${esc(e.kind)}"><span class="ts">${esc(e.ts.slice(11, 19))}</span>${esc(e.summary)}</div>`
+  ).join("") || "<i>No events yet.</i>";
+
+  document.getElementById("decisions").innerHTML = state.events.filter((e) => e.kind === "decision").map((e) =>
+    `<div class="event decision"><b>${esc(e.detail.topic)}</b> = ${esc(e.detail.choice)}<br><span class="ts">${esc(e.detail.reason)}${e.detail.inferred ? " (inferred)" : ""}</span></div>`
+  ).join("") || "<i>No decisions yet.</i>";
+
+  document.getElementById("findings").innerHTML = state.findings.map((f) =>
+    `<div class="finding ${f.status === "fixed" ? "fixed" : ""}"><span class="sev ${f.severity}">${esc(f.severity.toUpperCase())}</span> ${esc(f.title)} <span class="ts">${esc(f.file ?? "")}:${esc(f.line ?? "")}</span></div>`
+  ).join("") || "<i>No findings yet. Run the scan.</i>";
+
+  document.getElementById("lessons").innerHTML = state.lessons.map((l) => {
+    const g = state.grades[l.id];
+    return `<div class="lesson">
+      <h3>${esc(l.title)} <span class="badge">${esc(l.risk_level)}${l.security ? " · security" : ""}</span></h3>
+      <div class="body">${esc(l.body)}</div>
+      <div class="refs">${l.file_refs.map((r) => esc(r.path + ":" + r.lines)).join(" · ")}</div>
+      <div class="rcheck">Reason check: ${esc(l.reason_check)}</div>
+      <div class="q">Explain back: ${esc(l.question)}</div>
+      ${g
+        ? `<div class="grade"><b>${g.score}/100</b><br><span class="right">Got right: ${g.got_right.map(esc).join("; ")}</span><br><span class="missed">Missed: ${g.missed.map(esc).join("; ")}</span></div>`
+        : `<textarea id="ans-${esc(l.id)}" placeholder="Explain in your own words..."></textarea><button onclick="grade('${esc(l.id)}')">Grade me</button>`}
+    </div>`;
+  }).join("") || "<i>No lessons yet. Run the teacher.</i>";
+}
+
+async function grade(lessonId) {
+  const box = document.getElementById("ans-" + lessonId);
+  const answer = box.value.trim();
+  if (!answer) return;
+  box.disabled = true;
+  await fetch("/api/grade", { method: "POST", body: JSON.stringify({ lessonId, answer }) });
+  await refresh();
+}
+
+async function toggleMode() {
+  await fetch("/api/mode", { method: "POST", body: JSON.stringify({ mode: mode === "live" ? "snapshot" : "live" }) });
+  await refresh();
+}
+
+refresh();
+setInterval(refresh, 2000);
+</script>
