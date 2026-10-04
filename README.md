@@ -47,7 +47,7 @@ npm run build:plugin
 **Requirements:** Node 22+, Python 3, the Cline CLI (`npm i -g cline`), and a Cline account (free models work for the plugin; ClinePass is needed for the teacher and grader).
 
 > [!IMPORTANT]
-> **Fully quit the Cline desktop app first (`Cmd + Q`).** Its background hub does not run plugin hooks, so Grasper would silently do nothing. The CLI must start its own hub.
+> **Fully quit the Cline desktop app first.** Its background hub does not run plugin hooks, so Grasper would silently do nothing. The CLI must start its own hub.
 
 1. **Get Grasper and test it:**
    ```bash
