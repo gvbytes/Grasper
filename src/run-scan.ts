@@ -29,6 +29,12 @@ function banditSeverity(level: string, testId: string): Finding["severity"] {
   return "low";
 }
 
+// demo-weakness.py is our exploit harness, not the app. Its subprocess and urllib
+// calls are deliberate. Do not scan it.
+function isAppFile(filename: string): boolean {
+  return !relative(demoAppDir, filename).startsWith("demo-weakness.py");
+}
+
 async function runBandit(): Promise<Finding[]> {
   try {
     // Bandit exits 1 when it finds issues. That is normal, not an error.
@@ -38,7 +44,7 @@ async function runBandit(): Promise<Finding[]> {
       { cwd: demoAppDir + "/..", maxBuffer: 16 * 1024 * 1024 }
     );
     const parsed = JSON.parse(stdout) as { results?: BanditResult[] };
-    return (parsed.results ?? []).map((result) => ({
+    return (parsed.results ?? []).filter((r) => isAppFile(r.filename)).map((result) => ({
       id: `bandit-${result.test_id}-${relative(demoAppDir, result.filename)}-${result.line_number}`,
       severity: banditSeverity(result.issue_severity, result.test_id),
       title: result.issue_text,
@@ -54,7 +60,7 @@ async function runBandit(): Promise<Finding[]> {
     if (stdout) {
       try {
         const parsed = JSON.parse(stdout) as { results?: BanditResult[] };
-        return (parsed.results ?? []).map((result) => ({
+        return (parsed.results ?? []).filter((r) => isAppFile(r.filename)).map((result) => ({
           id: `bandit-${result.test_id}-${relative(demoAppDir, result.filename)}-${result.line_number}`,
           severity: banditSeverity(result.issue_severity, result.test_id),
           title: result.issue_text,
