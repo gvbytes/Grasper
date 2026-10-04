@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}My notes{% endblock %}
+{% block content %}
+<h1>My notes</h1>
+<form method="post" action="{{ url_for('create_note') }}">
+  <label for="content">New note</label>
+  <textarea id="content" name="content" rows="3" required></textarea>
+  <button type="submit">Add note</button>
+</form>
+{% if notes %}
+  {% for note in notes %}
+  <div class="note">
+    <div>
+      {{ note["content"] }}
+      <br><small>{{ note["created_at"] }}</small>
+    </div>
+    <form method="post" action="{{ url_for('delete_note', note_id=note['id']) }}">
+      <button type="submit">Delete</button>
+    </form>
+  </div>
+  {% endfor %}
+{% else %}
+  <p>You have no notes yet.</p>
+{% endif %}
+{% endblock %}

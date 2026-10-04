@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Notes{% endblock %}</title>
+  <style>
+    body { font-family: sans-serif; max-width: 640px; margin: 2rem auto; padding: 0 1rem; }
+    .flash { background: #ffe9a8; padding: 0.5rem 1rem; border-radius: 4px; }
+    form { margin: 1rem 0; }
+    label { display: block; margin: 0.5rem 0 0.2rem; }
+    input, textarea { width: 100%; box-sizing: border-box; padding: 0.4rem; }
+    button { margin-top: 0.5rem; padding: 0.4rem 1rem; }
+    .note { display: flex; justify-content: space-between; align-items: center;
+            border-bottom: 1px solid #ddd; padding: 0.5rem 0; }
+    .note small { color: #888; }
+    nav a { margin-right: 1rem; }
+  </style>
+</head>
+<body>
+  <nav>
+    <a href="{{ url_for('index') }}">Notes</a>
+    {% if session.get('user_id') %}
+      <a href="{{ url_for('logout') }}">Log out</a>
+    {% else %}
+      <a href="{{ url_for('login') }}">Log in</a>
+      <a href="{{ url_for('register') }}">Register</a>
+    {% endif %}
+  </nav>
+  <hr>
+  {% for message in get_flashed_messages() %}
+    <p class="flash">{{ message }}</p>
+  {% endfor %}
+  {% block content %}{% endblock %}
+</body>
+</html>
