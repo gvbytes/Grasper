@@ -1,0 +1,16 @@
+{
+  "name": "grasper-cline-plugin",
+  "version": "0.1.0",
+  "type": "module",
+  "cline": {
+    "plugins": [
+      {
+        "paths": ["./grasper.js"],
+        "capabilities": ["hooks", "tools"]
+      }
+    ]
+  },
+  "peerDependencies": {
+    "@cline/core": "*"
+  }
+}

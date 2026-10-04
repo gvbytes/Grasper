@@ -8,13 +8,14 @@
   },
   "scripts": {
     "smoke": "tsx src/smoke.ts",
-    "test": "GRASPER_DATA_DIR=/tmp/grasper-test-data tsx src/tests/lib.test.ts && GRASPER_DATA_DIR=/tmp/grasper-test-data tsx src/tests/guard.test.ts",
+    "test": "npm run build:plugin && GRASPER_DATA_DIR=/tmp/grasper-test-data tsx src/tests/lib.test.ts && GRASPER_DATA_DIR=/tmp/grasper-test-data tsx src/tests/guard.test.ts && GRASPER_DATA_DIR=/tmp/grasper-test-data tsx src/tests/timing.test.ts",
     "build:demo": "tsx src/run-builder.ts",
     "scan": "tsx src/run-scan.ts",
     "teach": "tsx src/run-teacher.ts",
     "panel": "tsx src/panel/server.ts",
     "fixture": "tsx src/make-fixture.ts",
-    "snapshot": "rm -rf data-snapshot && cp -r data data-snapshot && echo snapshot saved",
+    "snapshot": "tsx src/make-snapshot.ts",
+    "build:plugin": "esbuild src/adapters/cline/plugin.ts --bundle --platform=node --format=esm --outfile=cline-plugin/grasper.js --external:@cline/core --external:@cline/sdk --external:@cline/shared --external:@cline/agents",
     "guard-demo": "tsx src/run-builder.ts --guard-demo"
   },
   "keywords": [],

@@ -1,29 +1,13 @@
 import { Agent, createTool } from "@cline/sdk";
 import { z } from "zod";
+import type { Grade, Lesson } from "../../lib/lessons.js";
 import { getClinePassKey } from "./auth.js";
-import type { Decision } from "../plugin/guard.js";
-import type { Finding } from "./findings.js";
+import type { Decision } from "../../plugin/guard.js";
+import type { Finding } from "../../lib/findings.js";
 
-// The teacher is an SDK Agent. It never invents findings.
+// The teacher is a Cline SDK Agent. It never invents findings.
 // It explains real findings and real decisions, against the real code.
 // Structured output comes from a submit tool with completesRun. No JSON parsing.
-
-export type Lesson = {
-  id: string;
-  title: string;
-  risk_level: "high" | "medium" | "low";
-  security: boolean; // Security lessons weigh double in the score.
-  body: string; // The lesson text. Plain words. Short sentences.
-  file_refs: { path: string; lines: string }[]; // Example: { path: "app.py", lines: "40-48" }.
-  reason_check: string; // Does the agent's logged reason match the code? Say how.
-  question: string; // The explain-back question for the user.
-};
-
-export type Grade = {
-  score: number; // 0 to 100.
-  got_right: string[];
-  missed: string[];
-};
 
 const LESSON_MODEL = process.env.TEACHER_MODEL ?? "cline-pass/deepseek-v4.1-flash";
 const GRADER_MODEL = process.env.GRADER_MODEL ?? "cline-pass/deepseek-v4-pro";

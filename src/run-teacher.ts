@@ -1,7 +1,7 @@
 import { appendEvent, readEvents, readJson, writeJson } from "./lib/store.js";
 import type { Finding } from "./lib/findings.js";
 import type { Decision } from "./plugin/guard.js";
-import { generateLessons } from "./lib/teacher.js";
+import { generateLessons } from "./adapters/cline/teacher.js";
 import { readAppSource } from "./lib/source.js";
 
 // Runs the teacher after the build and the scan.

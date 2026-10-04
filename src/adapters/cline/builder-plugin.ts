@@ -1,13 +1,13 @@
 import { createTool } from "@cline/sdk";
 import type { AgentHooks, AgentPlugin, AgentTool } from "@cline/sdk";
 import { z } from "zod";
-import { appendEvent, projectRoot } from "../lib/store.js";
+import { appendEvent, projectRoot } from "../../lib/store.js";
 import {
   evaluateFileWrite,
   evaluateRunCommands,
   newGuardState,
   type GuardState,
-} from "./guard.js";
+} from "../../plugin/guard.js";
 
 // The Grasper plugin. One instance per builder run, so state stays per-run.
 // Guards installs and secrets. Records decisions through the log_decision tool.

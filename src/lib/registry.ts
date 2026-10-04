@@ -26,9 +26,17 @@ export type PackageMeta = {
 
 const TIMEOUT_MS = 6000;
 const METADATA_TIMEOUT_MS = 3000;
+const APP_TIMEOUT_MS = 1500;
 const NEW_PACKAGE_DAYS = 30;
 const FEW_RELEASES = 2;
 const LOW_WEEKLY_DOWNLOADS = 1000;
+
+// App mode: the Cline app sandbox gives hooks a hard 3000 ms.
+// Existence checks only. One attempt, short timeout, in-memory cache.
+let appMode = false;
+export function enableAppMode(): void {
+  appMode = true;
+}
 
 // Risk signals for a package that exists. Two or more mean block. One means warning.
 export function computeSignals(meta: PackageMeta): string[] {
@@ -124,14 +132,40 @@ async function fetchOnce(url: string, timeoutMs: number, abbreviated = false): P
   }
 }
 
-// Fetch with one retry on timeout. Venue Wi-Fi is flaky.
-async function fetchJson(url: string, abbreviated = false, timeoutMs = TIMEOUT_MS): Promise<{ ok: boolean; status: number; body?: unknown }> {
+// Fetch with one retry on timeout. Venue Wi-Fi is flaky. App mode: one attempt only.
+async function fetchJson(url: string, abbreviated = false, timeoutMs?: number): Promise<{ ok: boolean; status: number; body?: unknown }> {
+  const effective = appMode ? APP_TIMEOUT_MS : (timeoutMs ?? TIMEOUT_MS);
   try {
-    return await fetchOnce(url, timeoutMs, abbreviated);
+    return await fetchOnce(url, effective, abbreviated);
   } catch (error) {
+    if (appMode) throw error;
     const aborted = error instanceof Error && error.name === "AbortError";
     if (!aborted) throw error;
-    return fetchOnce(url, timeoutMs, abbreviated);
+    return fetchOnce(url, effective, abbreviated);
+  }
+}
+
+// Status-only fetch. Reads no body. Used by app-mode existence checks.
+async function fetchStatus(url: string, timeoutMs: number): Promise<number> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    return response.status;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// App-mode existence check: one fast status request, no metadata, no signals.
+async function appExists(url: string, suggestion: string | undefined): Promise<RegistryCheck> {
+  try {
+    const status = await fetchStatus(url, APP_TIMEOUT_MS);
+    if (status === 404) return { status: "missing", suggestion, signals: [] };
+    if (status >= 200 && status < 300) return { status: "exists", suggestion, signals: [] };
+    return { status: "unknown", suggestion, signals: [] };
+  } catch {
+    return { status: "unknown", suggestion, signals: [] };
   }
 }
 
@@ -167,6 +201,9 @@ async function npmWeeklyDownloads(encoded: string): Promise<number | undefined> 
 
 async function checkPypi(name: string): Promise<RegistryCheck> {
   const suggestion = findSuggestion(name, POPULAR_PYPI);
+  if (appMode) {
+    return appExists(`https://pypi.org/pypi/${encodeURIComponent(name)}/json`, suggestion);
+  }
   try {
     const downloadsPromise = pypiWeeklyDownloads(name); // Runs in parallel.
     const result = await fetchJson(`https://pypi.org/pypi/${encodeURIComponent(name)}/json`);
@@ -201,6 +238,11 @@ async function checkPypi(name: string): Promise<RegistryCheck> {
 
 async function checkNpm(name: string): Promise<RegistryCheck> {
   const suggestion = findSuggestion(name, POPULAR_NPM);
+  if (appMode) {
+    // Scoped names need the slash encoded: @scope/name -> @scope%2Fname.
+    const encoded = name.startsWith("@") ? name.replace("/", "%2F") : name;
+    return appExists(`https://registry.npmjs.org/${encoded}/latest`, suggestion);
+  }
   try {
     // Scoped names need the slash encoded: @scope/name -> @scope%2Fname.
     const encoded = name.startsWith("@") ? name.replace("/", "%2F") : name;

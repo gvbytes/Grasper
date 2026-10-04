@@ -1,6 +1,6 @@
 import { ClineCore } from "@cline/sdk";
 import { appendEvent, demoAppDir } from "./lib/store.js";
-import { createGrasperPlugin } from "./plugin/index.js";
+import { createGrasperPlugin } from "./adapters/cline/builder-plugin.js";
 
 // Starts the builder agent (ClineCore) with the Grasper plugin attached.
 // No apiKey here: the local backend uses the stored Cline login.

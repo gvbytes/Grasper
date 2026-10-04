@@ -1,14 +1,19 @@
 import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 // All JSON reads and writes for Grasper go through this file.
 // The panel, the plugin, the scan, and the teacher share these paths.
+// Data lives in ~/.grasper/data by default, so every adapter and process
+// (including the Cline app sandbox) finds the same place. Override: GRASPER_DATA_DIR.
 
 export const projectRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
-// Tests set GRASPER_DATA_DIR to a temp dir. Demo data stays clean.
-export const dataDir = process.env.GRASPER_DATA_DIR ?? join(projectRoot, "data");
-export const demoAppDir = join(projectRoot, "demo-app");
+export const dataDir = process.env.GRASPER_DATA_DIR ?? join(homedir(), ".grasper", "data");
+// The snapshot lives next to the data dir. The panel's demo mode reads it.
+export const snapshotDir = join(dirname(dataDir), "data-snapshot");
+// The app Grasper teaches. Override with GRASPER_APP_DIR (absolute path).
+export const demoAppDir = process.env.GRASPER_APP_DIR ?? join(projectRoot, "demo-app");
 
 const eventsPath = join(dataDir, "events.jsonl");
 

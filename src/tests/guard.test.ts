@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createGrasperPlugin } from "../plugin/index.js";
+import { createGrasperPlugin } from "../adapters/cline/builder-plugin.js";
 import { evaluateFileWrite, evaluateRunCommands, newGuardState } from "../plugin/guard.js";
 import { computeSignals, riskAction } from "../lib/registry.js";
 

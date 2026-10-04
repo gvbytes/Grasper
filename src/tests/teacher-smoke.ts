@@ -1,6 +1,6 @@
 import { Agent, createTool } from "@cline/sdk";
 import { z } from "zod";
-import { getClinePassKey } from "../lib/auth.js";
+import { getClinePassKey } from "../adapters/cline/auth.js";
 
 // Minimal teacher check: does an Agent run with the stored-login key at all?
 const apiKey = await getClinePassKey();

@@ -1,5 +1,5 @@
 import { writeJson } from "./lib/store.js";
-import type { Lesson } from "./lib/teacher.js";
+import type { Lesson } from "./lib/lessons.js";
 
 // Development fixture for the panel. Also the demo fallback if the API is down.
 // The real teacher output replaces this file when run-teacher succeeds.

@@ -1,5 +1,5 @@
 import type { Finding } from "./findings.js";
-import type { Grade, Lesson } from "./teacher.js";
+import type { Grade, Lesson } from "./lessons.js";
 
 // One readiness number, 0 to 100, shown big on the panel.
 // Score = weighted share of passed lessons, minus 15 per open high finding.

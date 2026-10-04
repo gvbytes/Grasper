@@ -1,17 +1,19 @@
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
-import { join } from "node:path";
-import { readEvents, readJson, writeJson, projectRoot } from "../lib/store.js";
+import { dirname, join } from "node:path";
+import { dataDir, readEvents, readJson, writeJson, projectRoot } from "../lib/store.js";
 import type { Finding } from "../lib/findings.js";
-import type { Grade, Lesson } from "../lib/teacher.js";
+import type { Grade, Lesson } from "../lib/lessons.js";
 import { computeScore } from "../lib/score.js";
-import { gradeExplainBack } from "../lib/teacher.js";
+import { gradeExplainBack } from "../adapters/cline/teacher.js";
 import { readAppSource } from "../lib/source.js";
 
 // The panel server. Plain Node http, no framework, no CDN.
 // The page polls /api/state every 2 seconds.
 
 const PORT = 4000;
+// The snapshot lives next to the data dir, wherever that is.
+const snapshotDir = join(dirname(dataDir), "data-snapshot");
 
 // Demo mode reads the saved snapshot instead of the live data dir.
 let mode: "live" | "snapshot" = "live";
@@ -19,7 +21,7 @@ let mode: "live" | "snapshot" = "live";
 async function readNamed<T>(name: string, fallback: T): Promise<T> {
   if (mode === "snapshot") {
     try {
-      const text = await readFile(join(projectRoot, "data-snapshot", `${name}.json`), "utf8");
+      const text = await readFile(join(snapshotDir, `${name}.json`), "utf8");
       return JSON.parse(text) as T;
     } catch {
       return fallback;
@@ -31,7 +33,7 @@ async function readNamed<T>(name: string, fallback: T): Promise<T> {
 async function readAllEvents() {
   if (mode === "snapshot") {
     try {
-      const text = await readFile(join(projectRoot, "data-snapshot", "events.jsonl"), "utf8");
+      const text = await readFile(join(snapshotDir, "events.jsonl"), "utf8");
       return text.split("\n").filter(Boolean).map((line) => JSON.parse(line));
     } catch {
       return [];
