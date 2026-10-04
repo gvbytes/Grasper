@@ -4,3 +4,8 @@ data-snapshot/
 demo-app/
 *.log
 .DS_Store
+.env
+.env.*
+venv/
+*.db
+

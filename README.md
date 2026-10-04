@@ -27,6 +27,22 @@ readiness score.
 - Sign in to the Cline app. The builder uses the stored login. No API key needed.
   The teacher resolves the same login through RuntimeOAuthTokenManager (src/lib/auth.ts).
 
+## Install the Plugin
+
+To install Grasper as a Cline plugin directly from the repository:
+
+```bash
+cline plugin install ./cline-plugin
+```
+
+Alternatively, point the Cline app at the `cline-plugin` directory or copy it into your Cline plugins directory.
+Before installing or distributing, build the standalone bundle:
+
+```bash
+npm run build:plugin
+```
+
+
 ## Run order
 
 ```bash
@@ -39,6 +55,8 @@ npm run panel        # http://localhost:4000
 ```
 
 ## Demo (3 minutes)
+
+> **Note:** The demo app comes with a vulnerability (SQL injection in `app.py`) that is **seeded on purpose**. This is designed to demonstrate Grasper's ability to catch flaws, have the teacher agent generate lessons, and let the developer explain back fixes to improve their readiness score.
 
 1. Panel: the why-log from the build.
 2. Live guard demo: `npm run guard-demo` blocks a fake install and a secret paste.
