@@ -74,7 +74,12 @@ export async function generateLessons(input: {
     systemPrompt: `You are the Grasper teacher. You teach a beginner the app their AI agent built.
 ${STYLE}
 Rules:
-- Write one lesson per high or medium finding, riskiest first.
+- Lesson 1 is always "How your app works", for a complete beginner:
+  - one line per file: what the file is for
+  - one line per route/page: what it does
+  - then trace one real request step by step (the login), from the browser form, to the route in app.py, to the database, and back to the page, with file and line numbers
+  - risk_level low, security false, and an explain-back question asking the user to describe that flow in their own words.
+- After lesson 1, write one lesson per high or medium finding, riskiest first.
 - Write one lesson about any blocked install or blocked secret: what Grasper stopped and why.
 - Then up to three lessons for the biggest decisions (framework, database, auth).
 - Each lesson has a reason_check line: compare the agent's logged reason with the real code.
