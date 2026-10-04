@@ -8,6 +8,7 @@
   },
   "scripts": {
     "smoke": "tsx src/smoke.ts",
+    "test": "GRASPER_DATA_DIR=/tmp/grasper-test-data tsx src/tests/lib.test.ts && GRASPER_DATA_DIR=/tmp/grasper-test-data tsx src/tests/guard.test.ts",
     "build:demo": "tsx src/run-builder.ts",
     "scan": "tsx src/run-scan.ts",
     "teach": "tsx src/run-teacher.ts",
@@ -21,5 +22,8 @@
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
     "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.4"
   }
 }

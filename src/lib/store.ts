@@ -6,7 +6,8 @@ import { fileURLToPath } from "node:url";
 // The panel, the plugin, the scan, and the teacher share these paths.
 
 export const projectRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
-export const dataDir = join(projectRoot, "data");
+// Tests set GRASPER_DATA_DIR to a temp dir. Demo data stays clean.
+export const dataDir = process.env.GRASPER_DATA_DIR ?? join(projectRoot, "data");
 export const demoAppDir = join(projectRoot, "demo-app");
 
 const eventsPath = join(dataDir, "events.jsonl");
