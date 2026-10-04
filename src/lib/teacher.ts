@@ -84,6 +84,7 @@ Rules:
 - Then up to three lessons for the biggest decisions (framework, database, auth).
 - Each lesson has a reason_check line: compare the agent's logged reason with the real code.
 - Each lesson ends with one explain-back question the user must answer in their own words.
+- Give each lesson a short descriptive id that names its topic, like sql-injection-login. Never use generic ids like lesson-2.
 - Call submit_lessons at the end. Do not answer in plain text.`,
     tools: [submitTool],
     maxIterations: 8,
