@@ -97,4 +97,14 @@ assert.deepEqual(flask.signals, [], `flask signals must be empty, got: ${JSON.st
 assert.deepEqual(react.signals, [], `react signals must be empty, got: ${JSON.stringify(react.signals)}`);
 assert.ok((flask.weeklyDownloads ?? 1_000_000) >= 1000, "flask downloads known or high");
 
+// Fix 1 regression: the npm releaseCount comes from the abbreviated doc's
+// "versions" (it has no "time"), so well-known packages keep 0 signals.
+const express = await checkPackage("npm", "express");
+assert.equal(express.status, "exists");
+assert.ok((express.releaseCount ?? 0) > 2, `express releaseCount must be > 2, got: ${express.releaseCount}`);
+assert.deepEqual(express.signals, [], `express signals must be empty, got: ${JSON.stringify(express.signals)}`);
+assert.equal(react.status, "exists");
+assert.ok((react.releaseCount ?? 0) > 2, `react releaseCount must be > 2, got: ${react.releaseCount}`);
+assert.deepEqual(react.signals, [], `react signals must be empty, got: ${JSON.stringify(react.signals)}`);
+
 console.log("ALL LIB TESTS PASSED");

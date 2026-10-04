@@ -226,11 +226,12 @@ async function checkNpm(name: string): Promise<RegistryCheck> {
     try {
       const full = await fetchJson(`https://registry.npmjs.org/${encoded}`, true, METADATA_TIMEOUT_MS);
       if (full.ok) {
-        const body = full.body as { time?: Record<string, string> };
+        const body = full.body as { time?: Record<string, string>; versions?: Record<string, unknown> };
         const time = body.time ?? {};
         const created = time.created;
-        releaseCount = Math.max(0, Object.keys(time).length - 2); // Minus created and modified.
+        // The abbreviated format has no "time". Age is unknown then, never guessed.
         ageDays = created ? daysSince(created) : undefined;
+        releaseCount = body.versions ? Object.keys(body.versions).length : Math.max(0, Object.keys(time).length - 2);
       }
     } catch {
       // Metadata is nice to have. Existence is already confirmed.
