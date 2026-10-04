@@ -1,12 +1,12 @@
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { dataDir, readEvents, readJson, writeJson, projectRoot } from "../lib/store.js";
+import { dataDir, demoAppDir, readEvents, readJson, writeJson, projectRoot } from "../lib/store.js";
 import type { Finding } from "../lib/findings.js";
 import type { Grade, Lesson } from "../lib/lessons.js";
 import { computeScore } from "../lib/score.js";
 import { gradeExplainBack } from "../adapters/cline/teacher.js";
-import { readAppSource } from "../lib/source.js";
+import { getAppContext } from "../lib/codebase.js";
 
 // The panel server. Plain Node http, no framework, no CDN.
 // The page polls /api/state every 2 seconds.
@@ -58,8 +58,8 @@ async function handleGrade(body: string): Promise<Grade & { lessonId: string }> 
   const { lessons } = await readNamed<{ lessons: Lesson[] }>("lessons", { lessons: [] });
   const lesson = lessons.find((l) => l.id === lessonId);
   if (!lesson) throw new Error(`Unknown lesson ${lessonId}`);
-  const source = await readAppSource();
-  const grade = await gradeExplainBack({ lesson, answer, source });
+  const app = await getAppContext(demoAppDir);
+  const grade = await gradeExplainBack({ lesson, answer, app, appDir: demoAppDir });
   const grades = await readJson<Record<string, Grade>>("grades", {});
   grades[lessonId] = grade;
   await writeJson("grades", grades);

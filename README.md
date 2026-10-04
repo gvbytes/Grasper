@@ -78,3 +78,13 @@ npm run panel        # http://localhost:4000
 ClinePass enforces a 5-hour limit per account. The builder, teacher, grader, and guard demo all
 use it. Budget calls before the demo. If you hit the limit mid-demo: switch the panel to snapshot
 mode and use the recorded backup video.
+
+## Large codebases
+
+The teacher and the grader pick a mode automatically (src/lib/codebase.ts):
+
+- Small apps (under 30,000 characters of source): the whole numbered source goes into the prompt, as before.
+- Large apps: a compact repo map (every file, line counts, main functions/classes/routes with line numbers) plus three read-only tools: `list_files`, `read_file` (max 300 lines per call), and `search_code`. The teacher reads the files behind findings, guard events, and decisions first.
+- Every read stays inside the app folder. `.env` files, databases, keys, `venv/`, `node_modules/`, and build folders are never listed, read, or searched.
+
+Point it at any project: `GRASPER_APP_DIR=/abs/path npm run scan && GRASPER_APP_DIR=/abs/path npm run teach`.

@@ -8,7 +8,7 @@
   },
   "scripts": {
     "smoke": "tsx src/smoke.ts",
-    "test": "npm run build:plugin && GRASPER_DATA_DIR=/tmp/grasper-test-data tsx src/tests/lib.test.ts && GRASPER_DATA_DIR=/tmp/grasper-test-data tsx src/tests/guard.test.ts && GRASPER_DATA_DIR=/tmp/grasper-test-data tsx src/tests/timing.test.ts",
+    "test": "npm run build:plugin && GRASPER_DATA_DIR=/tmp/grasper-test-data tsx src/tests/lib.test.ts && GRASPER_DATA_DIR=/tmp/grasper-test-data tsx src/tests/guard.test.ts && GRASPER_DATA_DIR=/tmp/grasper-test-data tsx src/tests/timing.test.ts && GRASPER_DATA_DIR=/tmp/grasper-test-data tsx src/tests/codebase.test.ts",
     "build:demo": "tsx src/run-builder.ts",
     "scan": "tsx src/run-scan.ts",
     "teach": "tsx src/run-teacher.ts",
