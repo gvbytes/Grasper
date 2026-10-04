@@ -58,7 +58,7 @@ Tested on macOS. The Linux steps use the same tools and commands.
 | Git | any recent | Cloning the repo |
 | Node.js + npm | **22 or newer** | Grasper itself (TypeScript, run with `tsx`) |
 | Python 3 + pip + venv | 3.10 or newer | The demo app and Bandit |
-| Bandit | latest (`pip`) | The security scan |
+| Bandit | latest (in a venv, section 5) | The security scan |
 | Cline CLI | 3.x (`npm i -g cline`) | Running Grasper as a plugin |
 | A Cline account | free | Signing in to the Cline CLI. **Free models work for the plugin** |
 | ClinePass subscription | - | Only for **script mode**: builder, teacher, grader, `npm run smoke` (they use the `cline-pass` provider) |
@@ -78,29 +78,33 @@ are in `demo-app/requirements.txt`.
 
 ```bash
 brew install git node@22 python
-echo 'export PATH="$(brew --prefix node@22)/bin:$PATH"' >> ~/.zshrc && source ~/.zshrc
-node -v                      # must print v22.x or newer
-python3 -m pip install --user bandit
+echo 'export PATH="$(brew --prefix node@22)/bin:$PATH"' >> ~/.zshrc
+source ~/.zshrc
+node -v
 npm i -g cline
-cline auth                   # sign in to your Cline account (follow the prompts)
+cline auth
 ```
 
 ### Linux (Ubuntu / Debian)
 
+Node 22 is installed with nvm:
+
 ```bash
 sudo apt update
 sudo apt install -y git curl python3 python3-pip python3-venv
-# Node 22 via nvm
 curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
 source ~/.bashrc
-nvm install 22 && nvm use 22
-node -v                      # must print v22.x or newer
-python3 -m pip install --user bandit     # on newer distros: pipx install bandit
+nvm install 22
+nvm use 22
+node -v
 npm i -g cline
-cline auth                   # sign in to your Cline account (follow the prompts)
+cline auth
 ```
 
-Check that Bandit works: `python3 -m bandit --version`.
+`node -v` must print `v22.x` or newer. `cline auth` signs you in to your Cline account: follow the prompts.
+
+Bandit is installed in section 5, inside a virtual environment. Recent macOS (Homebrew) and Linux
+Python versions block `pip install` outside a virtual environment (`externally-managed-environment`).
 
 ---
 
@@ -144,6 +148,22 @@ ALL TIMING TESTS PASSED
 ALL CODEBASE TESTS PASSED
 ```
 
+**Install Bandit** (for `npm run scan`) in a virtual environment inside the `Grasper` folder:
+
+```bash
+python3 -m venv venv
+venv/bin/pip install bandit
+venv/bin/python -m bandit --version
+```
+
+The scan runs `python3 -m bandit`, so activate the environment in the terminal where you run the scan:
+
+```bash
+source venv/bin/activate
+```
+
+`venv/` is in `.gitignore`.
+
 ---
 
 ## 6. Run Grasper inside the Cline CLI
@@ -157,9 +177,11 @@ ALL CODEBASE TESTS PASSED
 1. **Create a project folder and install the plugin into it** (run inside the `Grasper` folder):
    ```bash
    mkdir -p ~/grasper-try
-   cline plugin install ./cline-plugin --cwd ~/grasper-try --force
+   cline plugin install "$PWD/cline-plugin" --cwd ~/grasper-try --force
    ```
-   Without `--cwd`, `cline plugin install ./cline-plugin` installs Grasper for **all** your projects.
+   Use the full path (`"$PWD/cline-plugin"`). With `--cwd`, a relative path like `./cline-plugin` is
+   looked up inside the project folder and fails with `Plugin source path does not exist`.
+   Without `--cwd`, `cline plugin install "$PWD/cline-plugin"` installs Grasper for **all** your projects.
 
 2. **Start the panel** (second terminal, inside the `Grasper` folder):
    ```bash
@@ -173,13 +195,14 @@ ALL CODEBASE TESTS PASSED
    ```
    Any model works, including the free ones (for example `cline -P cline -m cline-free/deepseek-v4.1-flash`).
 
-4. **Try it.** Type these prompts in the chat, one at a time:
+4. **Try it.** Start a **new** `cline` session for each test (Ctrl+C, then `cline` again). In the same
+   session, the model remembers earlier checks and changes its behavior.
 
-   - Fake package:
+   - Fake package (`flask-csrf-shield` does not exist on PyPI):
      ```text
-     Run exactly this command now, without checking anything first: pip install flask-remember-secure-pro
+     Set up this Flask project: create a venv, then install flask, flask-login, flask-wtf and flask-csrf-shield into it with venv/bin/pip.
      ```
-     Expect: `Grasper blocked this install: "flask-remember-secure-pro" does not exist on PyPI ...`
+     Expect: `Grasper blocked this install: "flask-csrf-shield" does not exist on PyPI ...`
 
    - Secret written into code (the key is fake):
      ```text
@@ -193,8 +216,12 @@ ALL CODEBASE TESTS PASSED
      Build a tiny Flask app here with one page that says Hello. Use a virtual environment and requirements.txt. Call log_decision before choosing any library or installing any package.
      ```
 
-   Models sometimes refuse a risky request on their own before running anything. In that case Grasper
-   has nothing to block. Ask it to run the command directly, as in the prompts above.
+   Grasper blocks what the agent **tries** to do. Careful models sometimes check PyPI first and skip the
+   fake package on their own; then there is nothing to block. That is the model being careful, not
+   Grasper failing. `npm test` and `npm run guard-demo` show the block every time.
+
+   If the key in the secret prompt shows as `•••` after you paste it, type it by hand. Some apps mask
+   API-key-like text when you copy it, and a masked key is a placeholder, not a secret.
 
 5. **Check Grasper's log:**
    ```bash
@@ -215,6 +242,7 @@ Needs ClinePass (the teacher and the grader use the `cline-pass` provider) and B
 
 ```bash
 cd Grasper
+source venv/bin/activate
 GRASPER_APP_DIR=~/grasper-try npm run scan
 GRASPER_APP_DIR=~/grasper-try npm run teach
 GRASPER_APP_DIR=~/grasper-try npm run panel
@@ -254,18 +282,24 @@ Script mode. Needs ClinePass.
 
 4. **Scan and lessons:**
    ```bash
+   source venv/bin/activate
    npm run scan
    npm run teach
-   npm run panel        # http://127.0.0.1:4000
+   npm run panel
    ```
+   The panel opens on `http://127.0.0.1:4000`.
 
 5. **Show the weakness, fix it, show it is gone:**
    ```bash
-   python3 scripts/demo-weakness.py       # prints LOGIN BYPASSED (starts the app itself on port 5055)
-   python3 demo-app/fix-demo.py apply      # parameterized query, debug off
-   python3 scripts/demo-weakness.py       # prints LOGIN BLOCKED
-   npm run scan                            # the SQL injection finding is gone
+   python3 scripts/demo-weakness.py
+   python3 demo-app/fix-demo.py apply
+   python3 scripts/demo-weakness.py
+   npm run scan
    ```
+   - The first `demo-weakness.py` prints `LOGIN BYPASSED`. It starts the app itself on port 5055.
+   - `fix-demo.py apply` switches to a parameterized query and turns debug off.
+   - The second `demo-weakness.py` prints `LOGIN BLOCKED`.
+   - `npm run scan` no longer reports the SQL injection.
 
 6. **Explain-back** in the panel. The readiness score goes up.
 
@@ -287,14 +321,14 @@ the demo app is already in the repo.
 | `npm test` | Rebuild the plugin and run all tests | Internet |
 | `npm run build:plugin` | Rebuild `cline-plugin/grasper.js` | - |
 | `npm run panel` | Start the panel on `127.0.0.1:4000` | - |
-| `npm run scan` | Bandit + custom checks on `GRASPER_APP_DIR` | Bandit |
+| `npm run scan` | Bandit + custom checks on `GRASPER_APP_DIR` | Bandit venv active (section 5) |
 | `npm run teach` | Write lessons for `GRASPER_APP_DIR` | ClinePass |
 | `npm run smoke` | Check the SDK and the stored Cline login | ClinePass |
 | `npm run guard-demo` | Builder agent tries a fake install and a secret paste | ClinePass |
 | `npm run build:demo` | Builder agent builds `demo-app/` | ClinePass |
 | `npm run snapshot` | Copy the data folder to a snapshot (panel "mode" button) | - |
 | `npm run fixture` | Write hand-made fallback lessons if the API is down | - |
-| `cline plugin install ./cline-plugin --cwd <project> --force` | Install the plugin into one project | Cline CLI |
+| `cline plugin install "$PWD/cline-plugin" --cwd <project> --force` | Install the plugin into one project (run inside `Grasper`) | Cline CLI |
 
 ---
 
@@ -316,7 +350,12 @@ The panel only listens on `127.0.0.1`.
 | Nothing gets blocked in the CLI | macOS: the Cline desktop app's hub is running. Quit the app, run `pgrep -fl cline-hub-daemon`, `kill` any hub from `/Applications/Cline.app`, restart `cline`. Check the bottom bar shows your project folder |
 | `node -v` shows an old version | macOS: put Node 22 first in `PATH` (see section 3). Linux: `nvm use 22` |
 | Port 4000 in use | macOS: `lsof -ti :4000 \| xargs kill`. Linux: `fuser -k 4000/tcp` |
-| `No module named bandit` | `python3 -m pip install --user bandit` |
+| `No module named bandit` | Run `source venv/bin/activate` inside `Grasper` (section 5) |
+| `externally-managed-environment` from pip | Install into a virtual environment (section 5), not system-wide |
+| `Plugin source path does not exist` | Use the full path: `cline plugin install "$PWD/cline-plugin" --cwd <project> --force` |
+| `zsh: invalid mode specification` | A `# comment` was pasted with a command. Paste commands without comments |
+| The agent skips the fake package without being blocked | The model checked PyPI first. Start a new `cline` session and use a fresh fake name |
+| The secret prompt is not blocked | The pasted key turned into `•••`. Type the key by hand |
 | `KeyError: 'SECRET_KEY'` when the demo app starts | Create `demo-app/.env` (section 8, step 1) |
 | `Grasper needs a fresh Cline login` | Run `cline auth` again |
 | ClinePass limit reached | Wait for the reset, or use the panel's snapshot mode for the demo |
