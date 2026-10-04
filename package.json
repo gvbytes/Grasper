@@ -1,0 +1,25 @@
+{
+  "name": "grasper",
+  "version": "1.0.0",
+  "description": "Grasper: guard + why-log plugin, teacher agent, and panel for AI-built apps.",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "smoke": "tsx src/smoke.ts",
+    "build:demo": "tsx src/run-builder.ts",
+    "scan": "tsx src/run-scan.ts",
+    "teach": "tsx src/run-teacher.ts",
+    "panel": "tsx src/panel/server.ts"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@cline/sdk": "^0.0.90",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "zod": "^4.6.5"
+  }
+}

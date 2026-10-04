@@ -118,7 +118,7 @@ All names come from docs/sdk-facts.md. Step 1 of the build plan verifies them ag
 - **Registry checks have a 2500 ms timeout.** A registry failure produces a warning, never a block.
 - **log_decision is a custom tool.** We build it with createTool and register it in the plugin's setup.
 - **The teacher is an SDK Agent.** Structured output uses a submit_* tool with a zod schema and lifecycle { completesRun: true }. We save the tool input. We do not parse JSON from prose. The teacher result field is outputText, not text.
-- **Models run through ClinePass.** providerId "cline-pass". The API key comes from CLINE_API_KEY.
+- **Models run through ClinePass.** providerId "cline-pass". The builder uses the stored Cline login. The teacher gets its key from getClinePassKey() in src/lib/auth.ts at the start of each run. If a run fails with "requires re-authentication" or no login is found, we stop and tell the user to sign in again in the Cline app.
 
 ## 6. Demo plan (3 minutes)
 
