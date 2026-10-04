@@ -40,8 +40,9 @@ async function runBandit(): Promise<Finding[]> {
     // Bandit exits 1 when it finds issues. That is normal, not an error.
     const { stdout } = await run(
       "python3",
-      ["-m", "bandit", "-r", "demo-app", "-x", "demo-app/venv", "-f", "json"],
-      { cwd: demoAppDir + "/..", maxBuffer: 16 * 1024 * 1024 }
+      // Scan the real app folder (GRASPER_APP_DIR or demo-app), skipping virtual environments.
+      ["-m", "bandit", "-r", demoAppDir, "-x", `${join(demoAppDir, "venv")},${join(demoAppDir, ".venv")}`, "-f", "json"],
+      { cwd: demoAppDir, maxBuffer: 16 * 1024 * 1024 }
     );
     const parsed = JSON.parse(stdout) as { results?: BanditResult[] };
     return (parsed.results ?? []).filter((r) => isAppFile(r.filename)).map((result) => ({
