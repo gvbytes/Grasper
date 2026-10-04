@@ -43,7 +43,7 @@ npm run panel        # http://localhost:4000
 1. Panel: the why-log from the build.
 2. Live guard demo: `npm run guard-demo` blocks a fake install and a secret paste.
 3. Lesson: SQL injection in app.py, with the reason check.
-4. `python3 demo-app/demo-weakness.py` prints LOGIN BYPASSED.
+4. `python3 scripts/demo-weakness.py` prints LOGIN BYPASSED.
 5. `python3 demo-app/fix-demo.py apply`, re-run scan, weakness test prints LOGIN BLOCKED.
 6. Explain-back in the panel. The readiness score goes up.
 
