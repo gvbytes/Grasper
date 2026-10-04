@@ -30,7 +30,7 @@ export function extractCommandStrings(input: unknown): string[] {
 }
 
 // Split one command string into segments on &&, ;, ||, |.
-function splitSegments(command: string): string[] {
+export function splitSegments(command: string): string[] {
   return command.split(/&&|\|\||[;|]/).map((part) => part.trim()).filter(Boolean);
 }
 
@@ -54,10 +54,11 @@ const VALUE_FLAGS = new Set([
   "-i", "--index-url", "--extra-index-url", "-f", "--find-links",
   "-t", "--target", "-d", "--download", "--prefix", "--root",
   "--registry", "--cache-dir", "--proxy",
+  "-p", "--package", // npx -p <pkg>: the value is a package, not the command.
 ]);
 
 // Strip matching quotes around a token: 'Flask[async]>=3' -> Flask[async]>=3.
-function stripQuotes(token: string): string {
+export function stripQuotes(token: string): string {
   if (token.length >= 2) {
     const first = token[0];
     const last = token[token.length - 1];
@@ -110,6 +111,14 @@ function parseSegment(segment: string): InstallRequest[] {
   }
   if (pipWords) return collectPackages(pipWords, segment, "pypi");
 
+  // uv pip install flask | uv add flask
+  if (words[0] === "uv" && words[1] === "pip" && words[2] === "install") {
+    return collectPackages(words.slice(3), segment, "pypi");
+  }
+  if (words[0] === "uv" && words[1] === "add") {
+    return collectPackages(words.slice(2), segment, "pypi");
+  }
+
   // npm install react | npm i react | pnpm add react | yarn add react
   if (words[0] === "npm" && (words[1] === "install" || words[1] === "i")) {
     return collectPackages(words.slice(2), segment, "npm");
@@ -118,6 +127,26 @@ function parseSegment(segment: string): InstallRequest[] {
     return collectPackages(words.slice(2), segment, "npm");
   }
 
+  // npx <pkg> | pnpm dlx <pkg> | bunx <pkg>: the first non-flag word is the package.
+  if (words[0] === "npx" || words[0] === "bunx") return parseNpxStyle(words, 1, segment);
+  if (words[0] === "pnpm" && words[1] === "dlx") return parseNpxStyle(words, 2, segment);
+
+  return [];
+}
+
+// Tools like npx download a package, then run it. Only the package name counts.
+// Everything after it is a command argument, not another package.
+function parseNpxStyle(words: string[], startIndex: number, raw: string): InstallRequest[] {
+  for (let i = startIndex; i < words.length; i++) {
+    const word = stripQuotes(words[i]);
+    if (isFlag(word)) {
+      if (!word.includes("=") && VALUE_FLAGS.has(word)) i++;
+      continue;
+    }
+    const name = cleanName(word.startsWith("@") ? word : word.split("@")[0]);
+    if (!name) return [];
+    return [{ registry: "npm", name: name.toLowerCase(), raw }];
+  }
   return [];
 }
 

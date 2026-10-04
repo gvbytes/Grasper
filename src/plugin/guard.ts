@@ -1,5 +1,12 @@
 import { findInstalls, hasCurlPipeSh, type InstallRequest } from "../lib/install-parser.js";
 import { checkPackage, riskAction } from "../lib/registry.js";
+import {
+  dependencyFileKind,
+  extractPackagesFromWrite,
+  findRequirementRefs,
+  parseRequirementNames,
+  readRequirementFile,
+} from "../lib/requirements.js";
 import { findSecrets, isEnvFile, type SecretMatch } from "../lib/secrets.js";
 import type { GrasperEvent } from "../lib/store.js";
 
@@ -134,8 +141,13 @@ async function evaluateInstall(
 }
 
 
-// Evaluate a run_commands call: curl|sh, installs, decision enforcement.
-export async function evaluateRunCommands(input: unknown, state: GuardState): Promise<GuardVerdict> {
+// Evaluate a run_commands call: curl|sh, installs, requirements files, decision enforcement.
+// baseDir is the session working directory. It resolves relative "-r <file>" paths.
+export async function evaluateRunCommands(
+  input: unknown,
+  state: GuardState,
+  baseDir: string = process.cwd()
+): Promise<GuardVerdict> {
   const events: GrasperEvent[] = [];
   const warnings: string[] = [];
 
@@ -160,31 +172,105 @@ export async function evaluateRunCommands(input: unknown, state: GuardState): Pr
     }
   }
 
+  // "pip install -r <file>": check every package named inside the file.
+  for (const ref of findRequirementRefs(input, baseDir)) {
+    const text = await readRequirementFile(ref.path);
+    if (text === null) {
+      const warning =
+        `Grasper warning: could not read the requirements file "${ref.path}". ` +
+        `Allowed, but check its package names yourself.`;
+      warnings.push(warning);
+      events.push({
+        ts: new Date().toISOString(), source: "guard", kind: "warn",
+        summary: `WARNING: could not read requirements file "${ref.path}"`,
+        detail: { file: ref.path },
+      });
+      continue;
+    }
+    for (const name of parseRequirementNames(text)) {
+      const check = await checkPackage("pypi", name);
+      if (check.status === "missing") {
+        const hint = check.suggestion ? ` Did you mean "${check.suggestion}"?` : "";
+        const reason =
+          `Grasper blocked this install: the requirements file "${ref.path}" lists ` +
+          `"${name}", which does not exist on PyPI.${hint} ` +
+          `Fix the file: remove or replace the invented package name.`;
+        events.push({
+          ts: new Date().toISOString(), source: "guard", kind: "block",
+          summary: `BLOCKED install: requirements file lists missing package "${name}"`,
+          detail: { file: ref.path, package: name, registry: "pypi", suggestion: check.suggestion },
+        });
+        return { action: "block", reason, warnings, events };
+      }
+    }
+  }
+
   return { action: "allow", warnings, events };
 }
 
-// Pull the text content and file path out of editor or apply_patch inputs.
-function extractWrite(input: unknown): { path?: string; text: string } {
+// Pull the text content, file path, and kind out of editor or apply_patch inputs.
+function extractWrite(input: unknown): { path?: string; text: string; isPatch: boolean } {
   if (!input || typeof input !== "object") {
-    return { text: typeof input === "string" ? input : "" };
+    return { text: typeof input === "string" ? input : "", isPatch: false };
   }
   const record = input as Record<string, unknown>;
   if (typeof record.new_text === "string") {
-    return { path: typeof record.path === "string" ? record.path : undefined, text: record.new_text };
+    return {
+      path: typeof record.path === "string" ? record.path : undefined,
+      text: record.new_text,
+      isPatch: false,
+    };
   }
   if (typeof record.input === "string") {
     // apply_patch format. Paths appear in "*** Add File: <path>" lines.
     const pathMatch = /\*\*\*\s*(?:Add|Update) File:\s*(\S+)/.exec(record.input);
-    return { path: pathMatch?.[1], text: record.input };
+    return { path: pathMatch?.[1], text: record.input, isPatch: true };
   }
-  return { text: "" };
+  return { text: "", isPatch: false };
 }
 
-// Evaluate a file write: secrets in code. Never scans .env files.
-export function evaluateFileWrite(input: unknown): GuardVerdict {
+function fileName(path: string | undefined): string {
+  return (path ?? "").split("/").pop() ?? "(unknown file)";
+}
+
+// Only the lines a patch adds. Header lines starting with +++ are excluded.
+function addedPatchLines(patch: string): string {
+  return patch
+    .split("\n")
+    .filter((line) => line.startsWith("+") && !line.startsWith("+++"))
+    .map((line) => line.slice(1))
+    .join("\n");
+}
+
+// Evaluate a file write: dependency manifests first, then secrets. Async: registry checks.
+export async function evaluateFileWrite(input: unknown): Promise<GuardVerdict> {
   const events: GrasperEvent[] = [];
   const warnings: string[] = [];
-  const { path, text } = extractWrite(input);
+  const { path, text, isPatch } = extractWrite(input);
+
+  // Dependency files: check every added package name before the write.
+  const kind = dependencyFileKind(path);
+  if (kind && text) {
+    const content = isPatch ? addedPatchLines(text) : text;
+    const packages = extractPackagesFromWrite(kind, content);
+    for (const pkg of packages) {
+      const check = await checkPackage(pkg.registry, pkg.name);
+      if (check.status === "missing") {
+        const registryName = pkg.registry === "pypi" ? "PyPI" : "npm";
+        const reason =
+          `Grasper blocked this file write: it adds "${pkg.name}" to ${fileName(path)}, ` +
+          `but that package does not exist on ${registryName}. ` +
+          `AI agents sometimes invent package names. Pick a real, existing package.`;
+        events.push({
+          ts: new Date().toISOString(), source: "guard", kind: "block",
+          summary: `BLOCKED write to ${fileName(path)}: missing package "${pkg.name}"`,
+          detail: { file: fileName(path), package: pkg.name, registry: pkg.registry, suggestion: check.suggestion },
+        });
+        return { action: "block", reason, warnings, events };
+      }
+    }
+  }
+
   if (!text || isEnvFile(path)) return { action: "allow", warnings, events };
 
   const matches: SecretMatch[] = findSecrets(text);

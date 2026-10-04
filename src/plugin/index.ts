@@ -1,7 +1,7 @@
 import { createTool } from "@cline/sdk";
 import type { AgentHooks, AgentPlugin, AgentTool } from "@cline/sdk";
 import { z } from "zod";
-import { appendEvent } from "../lib/store.js";
+import { appendEvent, projectRoot } from "../lib/store.js";
 import {
   evaluateFileWrite,
   evaluateRunCommands,
@@ -16,15 +16,20 @@ const FILE_WRITE_TOOLS = new Set(["editor", "apply_patch"]);
 
 type BeforeToolContext = Parameters<NonNullable<AgentHooks["beforeTool"]>>[0];
 type SetupApi = { registerTool: (tool: AgentTool) => void };
+// Minimal shape of the SDK's PluginSetupContext. We only need the workspace root.
+type SetupContext = { workspaceInfo?: { rootPath?: string } };
 
 export function createGrasperPlugin(): AgentPlugin {
   const state: GuardState = newGuardState();
+  // The session workspace root. Resolves relative "-r <file>" paths.
+  let workspaceRoot: string | undefined;
 
   return {
     name: "grasper",
     manifest: { capabilities: ["hooks", "tools"] },
 
-    setup(api: SetupApi) {
+    setup(api: SetupApi, ctx?: SetupContext) {
+      workspaceRoot = ctx?.workspaceInfo?.rootPath;
       api.registerTool(
         createTool({
           name: "log_decision",
@@ -64,9 +69,9 @@ export function createGrasperPlugin(): AgentPlugin {
           const toolName = toolCall.toolName;
           let verdict;
           if (toolName === "run_commands") {
-            verdict = await evaluateRunCommands(input, state);
+            verdict = await evaluateRunCommands(input, state, workspaceRoot ?? projectRoot);
           } else if (FILE_WRITE_TOOLS.has(toolName)) {
-            verdict = evaluateFileWrite(input);
+            verdict = await evaluateFileWrite(input);
           } else {
             return undefined;
           }

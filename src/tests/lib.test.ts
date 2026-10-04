@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import { extractCommandStrings, findInstalls, hasCurlPipeSh } from "../lib/install-parser.js";
 import { checkPackage, computeSignals, editDistance, findSuggestion, riskAction } from "../lib/registry.js";
+import {
+  dependencyFileKind,
+  extractPackagesFromWrite,
+  findRequirementRefs,
+  parseRequirementNames,
+} from "../lib/requirements.js";
 
 // Parser: all accepted input shapes produce the same command strings.
 assert.deepEqual(extractCommandStrings({ commands: ["pip install flask", "ls"] }), ["pip install flask", "ls"]);
@@ -18,6 +24,48 @@ assert.deepEqual(findInstalls({ commands: ["pip install 'Flask[async]>=3'"] }), 
 assert.deepEqual(findInstalls({ commands: ['pip install "requests"'] }), [
   { registry: "pypi", name: "requests", raw: 'pip install "requests"' },
 ]);
+
+// Parser: uv, npx, pnpm dlx, and bunx are install commands too.
+assert.deepEqual(findInstalls({ commands: ["uv add flask"] }), [
+  { registry: "pypi", name: "flask", raw: "uv add flask" },
+]);
+assert.deepEqual(findInstalls({ commands: ["uv pip install flask python-dotenv"] }), [
+  { registry: "pypi", name: "flask", raw: "uv pip install flask python-dotenv" },
+  { registry: "pypi", name: "python-dotenv", raw: "uv pip install flask python-dotenv" },
+]);
+assert.deepEqual(findInstalls({ commands: ["npx create-react-app my-app"] }), [
+  { registry: "npm", name: "create-react-app", raw: "npx create-react-app my-app" },
+]);
+assert.deepEqual(findInstalls({ commands: ["npx -y cowsay@1.0 hi"] }), [
+  { registry: "npm", name: "cowsay", raw: "npx -y cowsay@1.0 hi" },
+]);
+assert.deepEqual(findInstalls({ commands: ["pnpm dlx create-vite myapp"] }), [
+  { registry: "npm", name: "create-vite", raw: "pnpm dlx create-vite myapp" },
+]);
+assert.deepEqual(findInstalls({ commands: ["bunx prettier --write ."] }), [
+  { registry: "npm", name: "prettier", raw: "bunx prettier --write ." },
+]);
+
+// Requirements helpers: name parsing, file detection, -r resolution, manifests.
+assert.deepEqual(parseRequirementNames("# comment\nflask==3.0\n-r other.txt\n'python-dotenv'\n"), ["flask", "python-dotenv"]);
+assert.deepEqual(findRequirementRefs({ commands: ["cd demo-app && pip install -r requirements.txt"] }, "/base"), [
+  { path: "/base/demo-app/requirements.txt" },
+]);
+assert.deepEqual(findRequirementRefs({ commands: ["pip install -r /abs/req.txt"] }, "/base"), [
+  { path: "/abs/req.txt" },
+]);
+assert.equal(dependencyFileKind("/x/requirements.txt"), "requirements");
+assert.equal(dependencyFileKind("/x/package.json"), "package-json");
+assert.equal(dependencyFileKind("/x/pyproject.toml"), "pyproject");
+assert.equal(dependencyFileKind("/x/app.py"), undefined);
+assert.deepEqual(extractPackagesFromWrite("pyproject", 'dependencies = ["flask>=3.0", "python-dotenv"]'), [
+  { registry: "pypi", name: "flask" },
+  { registry: "pypi", name: "python-dotenv" },
+]);
+assert.deepEqual(
+  extractPackagesFromWrite("package-json", "partial... \"dependencies\": { \"express\": \"^5\" }"),
+  [{ registry: "npm", name: "express" }]
+);
 
 // Parser: find installs across pip and npm forms.
 assert.deepEqual(findInstalls({ commands: ["pip install flask==3.0 requests"] }), [

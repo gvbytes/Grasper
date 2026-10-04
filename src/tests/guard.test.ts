@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtemp, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createGrasperPlugin } from "../plugin/index.js";
 import { evaluateFileWrite, evaluateRunCommands, newGuardState } from "../plugin/guard.js";
 import { computeSignals, riskAction } from "../lib/registry.js";
@@ -53,7 +56,7 @@ import { computeSignals, riskAction } from "../lib/registry.js";
 // 5. Secret in a code file: hard block. The real secret must NOT appear in events.
 {
   const secret = "sk-proj-AbCdEfGhIjKlMnOpQrStUvWxYz123456";
-  const verdict = evaluateFileWrite({
+  const verdict = await evaluateFileWrite({
     path: "/app/config.py",
     new_text: `OPENAI_KEY = "${secret}"\n`,
   });
@@ -65,7 +68,7 @@ import { computeSignals, riskAction } from "../lib/registry.js";
 
 // 6. .env writes are allowed. That is where secrets belong.
 {
-  const verdict = evaluateFileWrite({
+  const verdict = await evaluateFileWrite({
     path: "/app/.env",
     new_text: `OPENAI_KEY = "sk-proj-AbCdEfGhIjKlMnOpQrStUvWxYz123456"\n`,
   });
@@ -74,8 +77,93 @@ import { computeSignals, riskAction } from "../lib/registry.js";
 
 // 7. Placeholders are allowed.
 {
-  const verdict = evaluateFileWrite({ path: "/app/config.py", new_text: `API_KEY = "your-key-here"\n` });
+  const verdict = await evaluateFileWrite({ path: "/app/config.py", new_text: `API_KEY = "your-key-here"\n` });
   assert.equal(verdict.action, "allow");
+}
+
+// 7b. Fix 3: a requirements file with a fake package is blocked on "pip install -r".
+{
+  const dir = await mkdtemp(join(tmpdir(), "grasper-req-"));
+  await writeFile(join(dir, "requirements.txt"), "flask==3.0\nflask-remember-secure-pro\n");
+  const state = newGuardState();
+  const verdict = await evaluateRunCommands(
+    { commands: [`pip install -r ${join(dir, "requirements.txt")}`] },
+    state,
+    "/tmp"
+  );
+  assert.equal(verdict.action, "block");
+  assert.match(verdict.reason ?? "", /flask-remember-secure-pro/);
+  assert.match(verdict.reason ?? "", /does not exist on PyPI/);
+}
+
+// 7c. Fix 3: relative -r paths resolve against the "cd X" directory.
+{
+  const dir = await mkdtemp(join(tmpdir(), "grasper-req-"));
+  await writeFile(join(dir, "requirements.txt"), "requests\nflask-remember-secure-pro\n");
+  const state = newGuardState();
+  const verdict = await evaluateRunCommands(
+    { commands: [`cd ${dir} && pip install --requirement requirements.txt`] },
+    state,
+    "/tmp"
+  );
+  assert.equal(verdict.action, "block");
+  assert.match(verdict.reason ?? "", /requirements.txt/);
+}
+
+// 7d. Fix 3: a requirements file with only real packages is allowed.
+{
+  const dir = await mkdtemp(join(tmpdir(), "grasper-req-"));
+  await writeFile(join(dir, "requirements.txt"), "flask==3.0\npython-dotenv\n");
+  const state = newGuardState();
+  const verdict = await evaluateRunCommands(
+    { commands: [`pip install -r ${join(dir, "requirements.txt")}`] },
+    state,
+    "/tmp"
+  );
+  assert.equal(verdict.action, "allow");
+}
+
+// 7e. Fix 3: writing a requirements.txt with a fake package is blocked before the write.
+{
+  const verdict = await evaluateFileWrite({
+    path: "/app/requirements.txt",
+    new_text: "flask==3.0\nflask-remember-secure-pro\n",
+  });
+  assert.equal(verdict.action, "block");
+  assert.match(verdict.reason ?? "", /flask-remember-secure-pro/);
+}
+
+// 7f. Fix 3: writing a requirements.txt with real packages is allowed.
+{
+  const verdict = await evaluateFileWrite({
+    path: "/app/requirements.txt",
+    new_text: "flask==3.0\npython-dotenv\n",
+  });
+  assert.equal(verdict.action, "allow");
+}
+
+// 7g. Fix 3: writing a package.json with a fake dependency is blocked. Real ones pass.
+{
+  const blocked = await evaluateFileWrite({
+    path: "/app/package.json",
+    new_text: JSON.stringify({ name: "app", dependencies: { express: "^5.0.0", "react-secure-remember-pro": "^1.0.0" } }),
+  });
+  assert.equal(blocked.action, "block");
+  assert.match(blocked.reason ?? "", /react-secure-remember-pro/);
+  const allowed = await evaluateFileWrite({
+    path: "/app/package.json",
+    new_text: JSON.stringify({ name: "app", dependencies: { express: "^5.0.0" }, devDependencies: { vite: "^7.0.0" } }),
+  });
+  assert.equal(allowed.action, "allow");
+}
+
+// 7h. Fix 4: npx with a fake package is blocked. A well-known package passes.
+{
+  const state = newGuardState();
+  state.decisions.push({ topic: "package", choice: "cowsay", reason: "CLI tool.", packageName: "cowsay" });
+  const verdict = await evaluateRunCommands({ commands: ["npx flask-remember-secure-pro --flag"] }, state, "/tmp");
+  assert.equal(verdict.action, "block");
+  assert.match(verdict.reason ?? "", /does not exist on npm/);
 }
 
 // 8. Signal scoring: two signals block the install, one warns, zero allows.
