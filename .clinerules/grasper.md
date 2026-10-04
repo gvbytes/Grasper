@@ -13,7 +13,7 @@
 - If a name is not in docs/sdk-facts.md, open the type files in node_modules/@cline/ and find the real name. Never guess.
 - Attach the plugin with config.extensions and backendMode "local". Do not use pluginPaths.
 - Every hook body is wrapped in try/catch. A hook must never throw. On error, log it and return undefined.
-- Every network call has a timeout (2500 ms) and never blocks on failure.
+- Every network call has a timeout (6000 ms) with one retry on timeout, and never blocks on failure.
 
 ## Code rules
 

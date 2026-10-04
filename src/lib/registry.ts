@@ -1,5 +1,5 @@
 // Checks package names against PyPI and npm.
-// Every call has a 2500 ms timeout. Network failure means status "unknown", never a block.
+// Every call has a 6000 ms timeout with one retry. Network failure means status "unknown", never a block.
 
 export type RegistryStatus = "exists" | "missing" | "unknown";
 
@@ -10,7 +10,8 @@ export type RegistryCheck = {
   suggestion?: string; // "did you mean X" from the popular list.
 };
 
-const TIMEOUT_MS = 2500;
+const TIMEOUT_MS = 6000;
+const METADATA_TIMEOUT_MS = 3000;
 
 // About 30 popular names per registry, for typo warnings.
 const POPULAR_PYPI = [
@@ -60,9 +61,9 @@ export function findSuggestion(name: string, popular: string[]): string | undefi
   return best;
 }
 
-async function fetchJson(url: string, abbreviated = false): Promise<{ ok: boolean; status: number; body?: unknown }> {
+async function fetchOnce(url: string, timeoutMs: number, abbreviated = false): Promise<{ ok: boolean; status: number; body?: unknown }> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     // The abbreviated npm format is much smaller. The full document for react is many MB.
     const headers = abbreviated ? { accept: "application/vnd.npm.install-v1+json" } : undefined;
@@ -72,6 +73,17 @@ async function fetchJson(url: string, abbreviated = false): Promise<{ ok: boolea
     return { ok: true, status: response.status, body: await response.json() };
   } finally {
     clearTimeout(timer);
+  }
+}
+
+// Fetch with one retry on timeout. Venue Wi-Fi is flaky.
+async function fetchJson(url: string, abbreviated = false, timeoutMs = TIMEOUT_MS): Promise<{ ok: boolean; status: number; body?: unknown }> {
+  try {
+    return await fetchOnce(url, timeoutMs, abbreviated);
+  } catch (error) {
+    const aborted = error instanceof Error && error.name === "AbortError";
+    if (!aborted) throw error;
+    return fetchOnce(url, timeoutMs, abbreviated);
   }
 }
 
@@ -109,15 +121,26 @@ async function checkNpm(name: string): Promise<RegistryCheck> {
   try {
     // Scoped names need the slash encoded: @scope/name -> @scope%2Fname.
     const encoded = name.startsWith("@") ? name.replace("/", "%2F") : name;
-    const result = await fetchJson(`https://registry.npmjs.org/${encoded}`, true);
-    if (result.status === 404) return { status: "missing", suggestion };
-    if (!result.ok) return { status: "unknown", suggestion };
-    const body = result.body as { time?: Record<string, string> };
-    const time = body.time ?? {};
-    const created = time.created;
-    const releaseCount = Math.max(0, Object.keys(time).length - 2); // Minus created and modified.
-    const ageDays = created ? daysSince(created) : undefined;
-    return { status: "exists", ageDays, releaseCount, suggestion };
+    // The /latest endpoint is a small document. Fast existence check.
+    const latest = await fetchJson(`https://registry.npmjs.org/${encoded}/latest`);
+    if (latest.status === 404) return { status: "missing", suggestion };
+    if (!latest.ok) return { status: "unknown", suggestion };
+
+    // Age and release count need the full document. Best effort with a short timeout.
+    try {
+      const full = await fetchJson(`https://registry.npmjs.org/${encoded}`, true, METADATA_TIMEOUT_MS);
+      if (full.ok) {
+        const body = full.body as { time?: Record<string, string> };
+        const time = body.time ?? {};
+        const created = time.created;
+        const releaseCount = Math.max(0, Object.keys(time).length - 2); // Minus created and modified.
+        const ageDays = created ? daysSince(created) : undefined;
+        return { status: "exists", ageDays, releaseCount, suggestion };
+      }
+    } catch {
+      // Metadata is nice to have. Existence is already confirmed.
+    }
+    return { status: "exists", suggestion };
   } catch {
     return { status: "unknown", suggestion };
   }
