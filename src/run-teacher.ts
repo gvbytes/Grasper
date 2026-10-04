@@ -21,12 +21,17 @@ const decisions: Decision[] = events
   .filter((decision) => decision.topic && decision.choice);
 
 const { findings } = await readJson<{ findings: Finding[] }>("findings", { findings: [] });
+const guardEvents = events
+  .filter((event) => ["block", "warn", "seeded_weakness"].includes(event.kind))
+  .map((event) => ({ kind: event.kind, summary: event.summary }));
 const source = await readAppSource();
 
-console.log(`Teacher input: ${decisions.length} decisions, ${findings.length} findings, ${source.length} chars of source.`);
+console.log(
+  `Teacher input: ${decisions.length} decisions, ${guardEvents.length} guard events, ${findings.length} findings, ${source.length} chars of source.`
+);
 
 try {
-  const lessons = await generateLessons({ decisions, findings, source });
+  const lessons = await generateLessons({ decisions, findings, guardEvents, source });
   await writeJson("lessons", { lessons });
   for (const lesson of lessons) {
     await appendEvent({

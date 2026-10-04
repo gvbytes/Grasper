@@ -37,6 +37,7 @@ const STYLE = `Writing rules:
 export async function generateLessons(input: {
   decisions: Decision[];
   findings: Finding[];
+  guardEvents: { kind: string; summary: string }[]; // Blocks and warnings Grasper raised.
   source: string; // Concatenated demo-app source with file names.
 }): Promise<Lesson[]> {
   let submitted: Lesson[] | undefined;
@@ -74,6 +75,7 @@ export async function generateLessons(input: {
 ${STYLE}
 Rules:
 - Write one lesson per high or medium finding, riskiest first.
+- Write one lesson about any blocked install or blocked secret: what Grasper stopped and why.
 - Then up to three lessons for the biggest decisions (framework, database, auth).
 - Each lesson has a reason_check line: compare the agent's logged reason with the real code.
 - Each lesson ends with one explain-back question the user must answer in their own words.
@@ -82,10 +84,13 @@ Rules:
     maxIterations: 8,
   });
 
-  const prompt = `Here is the app, the decisions, and the scan findings.
+  const prompt = `Here is the app, the decisions, the guard events, and the scan findings.
 
 ## Decisions logged during the build
 ${input.decisions.map((d) => `- ${d.topic} = ${d.choice}: ${d.reason}${d.inferred ? " (inferred, reason not stated)" : ""}`).join("\n") || "(none)"}
+
+## Guard events (what Grasper blocked or warned about)
+${input.guardEvents.map((g) => `- [${g.kind}] ${g.summary}`).join("\n") || "(none)"}
 
 ## Scan findings
 ${input.findings.map((f) => `- [${f.severity}] ${f.title} (${f.source}${f.file ? `, ${f.file}${f.line ? `:${f.line}` : ""}` : ""})`).join("\n") || "(none)"}
