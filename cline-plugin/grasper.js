@@ -19993,6 +19993,12 @@ function cleanName(token) {
 function isFlag(token) {
   return token.startsWith("-");
 }
+function isRedirect(token) {
+  return /^(\d*|&)[<>]/.test(token);
+}
+function redirectTakesNext(token) {
+  return /^(\d*|&)?(<|>{1,2})$/.test(token);
+}
 function normalizePypi(name) {
   return name.toLowerCase().replace(/[-_.]+/g, "-");
 }
@@ -20035,6 +20041,10 @@ function collectPackages(words, raw, registry2) {
   const found = [];
   for (let i = 0; i < words.length; i++) {
     const word = stripQuotes(words[i]);
+    if (isRedirect(word)) {
+      if (redirectTakesNext(word)) i++;
+      continue;
+    }
     if (isFlag(word)) {
       if (!word.includes("=") && VALUE_FLAGS.has(word)) i++;
       continue;
@@ -20052,30 +20062,50 @@ function collectPackages(words, raw, registry2) {
   }
   return found;
 }
+function programName(word) {
+  const base = stripQuotes(word).split("/").pop() ?? "";
+  if (/^pip\d*(\.\d+)?$/.test(base)) return "pip";
+  if (/^python\d*(\.\d+)?$/.test(base)) return "python";
+  return base;
+}
+function stripPrefixes(words) {
+  let i = 0;
+  while (i < words.length && (words[i] === "sudo" || words[i] === "env" || /^[A-Za-z_][A-Za-z0-9_]*=/.test(words[i]))) i++;
+  return words.slice(i);
+}
+function afterInstall(words, start) {
+  for (let i = start; i < words.length; i++) {
+    if (words[i] === "install") return words.slice(i + 1);
+    if (!isFlag(words[i])) return null;
+    if (!words[i].includes("=") && VALUE_FLAGS.has(words[i])) i++;
+  }
+  return null;
+}
 function parseSegment(segment) {
-  const words = segment.split(/\s+/).filter(Boolean);
+  const words = stripPrefixes(segment.split(/\s+/).filter(Boolean));
   if (words.length === 0) return [];
+  const program = programName(words[0]);
   let pipWords = null;
-  if ((words[0] === "pip" || words[0] === "pip3") && words[1] === "install") {
-    pipWords = words.slice(2);
-  } else if ((words[0] === "python" || words[0] === "python3") && words[1] === "-m" && words[2] === "pip" && words[3] === "install") {
-    pipWords = words.slice(4);
+  if (program === "pip") {
+    pipWords = afterInstall(words, 1);
+  } else if (program === "python" && words[1] === "-m" && words[2] === "pip") {
+    pipWords = afterInstall(words, 3);
   }
   if (pipWords) return collectPackages(pipWords, segment, "pypi");
-  if (words[0] === "uv" && words[1] === "pip" && words[2] === "install") {
+  if (program === "uv" && words[1] === "pip" && words[2] === "install") {
     return collectPackages(words.slice(3), segment, "pypi");
   }
-  if (words[0] === "uv" && words[1] === "add") {
+  if (program === "uv" && words[1] === "add") {
     return collectPackages(words.slice(2), segment, "pypi");
   }
-  if (words[0] === "npm" && (words[1] === "install" || words[1] === "i")) {
+  if (program === "npm" && (words[1] === "install" || words[1] === "i")) {
     return collectPackages(words.slice(2), segment, "npm");
   }
-  if ((words[0] === "pnpm" || words[0] === "yarn") && words[1] === "add") {
+  if ((program === "pnpm" || program === "yarn") && words[1] === "add") {
     return collectPackages(words.slice(2), segment, "npm");
   }
-  if (words[0] === "npx" || words[0] === "bunx") return parseNpxStyle(words, 1, segment);
-  if (words[0] === "pnpm" && words[1] === "dlx") return parseNpxStyle(words, 2, segment);
+  if (program === "npx" || program === "bunx") return parseNpxStyle(words, 1, segment);
+  if (program === "pnpm" && words[1] === "dlx") return parseNpxStyle(words, 2, segment);
   return [];
 }
 function parseNpxStyle(words, startIndex, raw) {

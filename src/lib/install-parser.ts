@@ -43,6 +43,16 @@ function isFlag(token: string): boolean {
   return token.startsWith("-");
 }
 
+// Shell redirects are not package names: "2>&1", ">log.txt", ">>", "&>".
+function isRedirect(token: string): boolean {
+  return /^(\d*|&)[<>]/.test(token);
+}
+
+// A bare redirect operator takes the next word as its target: "> log.txt", "2> err.txt".
+function redirectTakesNext(token: string): boolean {
+  return /^(\d*|&)?(<|>{1,2})$/.test(token);
+}
+
 // Normalize a PyPI name: lowercase, runs of -_. become -.
 function normalizePypi(name: string): string {
   return name.toLowerCase().replace(/[-_.]+/g, "-");
@@ -74,6 +84,10 @@ function collectPackages(words: string[], raw: string, registry: "pypi" | "npm")
   const found: InstallRequest[] = [];
   for (let i = 0; i < words.length; i++) {
     const word = stripQuotes(words[i]);
+    if (isRedirect(word)) {
+      if (redirectTakesNext(word)) i++;
+      continue;
+    }
     if (isFlag(word)) {
       // Skip the flag value too, unless the flag already carries it (--flag=value).
       if (!word.includes("=") && VALUE_FLAGS.has(word)) i++;
@@ -94,42 +108,66 @@ function collectPackages(words: string[], raw: string, registry: "pypi" | "npm")
   return found;
 }
 
+// Program name without its path or version suffix:
+// "venv/bin/pip" -> "pip", "pip3.14" -> "pip", "/usr/bin/python3" -> "python".
+function programName(word: string): string {
+  const base = stripQuotes(word).split("/").pop() ?? "";
+  if (/^pip\d*(\.\d+)?$/.test(base)) return "pip";
+  if (/^python\d*(\.\d+)?$/.test(base)) return "python";
+  return base;
+}
+
+// Drop leading "sudo", "env" and "VAR=value" words: "sudo PIP_NO_CACHE=1 pip install x" -> "pip install x".
+function stripPrefixes(words: string[]): string[] {
+  let i = 0;
+  while (i < words.length && (words[i] === "sudo" || words[i] === "env" || /^[A-Za-z_][A-Za-z0-9_]*=/.test(words[i]))) i++;
+  return words.slice(i);
+}
+
+// Words after "install", skipping pip's own flags before it: "pip -q install x" -> ["x"].
+function afterInstall(words: string[], start: number): string[] | null {
+  for (let i = start; i < words.length; i++) {
+    if (words[i] === "install") return words.slice(i + 1);
+    if (!isFlag(words[i])) return null;
+    if (!words[i].includes("=") && VALUE_FLAGS.has(words[i])) i++;
+  }
+  return null;
+}
+
 // Find all install commands in one segment.
 function parseSegment(segment: string): InstallRequest[] {
-  const words = segment.split(/\s+/).filter(Boolean);
+  const words = stripPrefixes(segment.split(/\s+/).filter(Boolean));
   if (words.length === 0) return [];
+  const program = programName(words[0]);
 
-  // pip install flask | pip3 install flask | python -m pip install flask | python3 -m pip install flask
+  // pip install flask | venv/bin/pip install flask | pip3.14 install flask | python -m pip install flask
   let pipWords: string[] | null = null;
-  if ((words[0] === "pip" || words[0] === "pip3") && words[1] === "install") {
-    pipWords = words.slice(2);
-  } else if (
-    (words[0] === "python" || words[0] === "python3") &&
-    words[1] === "-m" && words[2] === "pip" && words[3] === "install"
-  ) {
-    pipWords = words.slice(4);
+  if (program === "pip") {
+    pipWords = afterInstall(words, 1);
+  } else if (program === "python" && words[1] === "-m" && words[2] === "pip") {
+    pipWords = afterInstall(words, 3);
   }
   if (pipWords) return collectPackages(pipWords, segment, "pypi");
 
   // uv pip install flask | uv add flask
-  if (words[0] === "uv" && words[1] === "pip" && words[2] === "install") {
+  if (program === "uv" && words[1] === "pip" && words[2] === "install") {
     return collectPackages(words.slice(3), segment, "pypi");
   }
-  if (words[0] === "uv" && words[1] === "add") {
+  if (program === "uv" && words[1] === "add") {
     return collectPackages(words.slice(2), segment, "pypi");
   }
 
   // npm install react | npm i react | pnpm add react | yarn add react
-  if (words[0] === "npm" && (words[1] === "install" || words[1] === "i")) {
+  if (program === "npm" && (words[1] === "install" || words[1] === "i")) {
     return collectPackages(words.slice(2), segment, "npm");
   }
-  if ((words[0] === "pnpm" || words[0] === "yarn") && words[1] === "add") {
+  if ((program === "pnpm" || program === "yarn") && words[1] === "add") {
     return collectPackages(words.slice(2), segment, "npm");
   }
 
   // npx <pkg> | pnpm dlx <pkg> | bunx <pkg>: the first non-flag word is the package.
-  if (words[0] === "npx" || words[0] === "bunx") return parseNpxStyle(words, 1, segment);
-  if (words[0] === "pnpm" && words[1] === "dlx") return parseNpxStyle(words, 2, segment);
+  if (program === "npx" || program === "bunx") return parseNpxStyle(words, 1, segment);
+  if (program === "pnpm" && words[1] === "dlx") return parseNpxStyle(words, 2, segment);
 
   return [];
 }

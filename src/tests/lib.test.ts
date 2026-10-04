@@ -25,6 +25,30 @@ assert.deepEqual(findInstalls({ commands: ['pip install "requests"'] }), [
   { registry: "pypi", name: "requests", raw: 'pip install "requests"' },
 ]);
 
+// Parser: pip with a path, a version suffix, a prefix, or flags before "install".
+const fakeName = (cmd: string) => findInstalls({ commands: [cmd] }).map((r) => r.name);
+assert.deepEqual(fakeName("venv/bin/pip install flask-csrf-shield"), ["flask-csrf-shield"]);
+assert.deepEqual(fakeName("./.venv/bin/pip3 install --dry-run flask-csrf-shield"), ["flask-csrf-shield"]);
+assert.deepEqual(fakeName("/opt/homebrew/bin/pip3.14 install flask-csrf-shield"), ["flask-csrf-shield"]);
+assert.deepEqual(fakeName("venv/bin/python -m pip install flask-csrf-shield"), ["flask-csrf-shield"]);
+assert.deepEqual(fakeName("python3.14 -m pip install flask-csrf-shield"), ["flask-csrf-shield"]);
+assert.deepEqual(fakeName("sudo pip install flask-csrf-shield"), ["flask-csrf-shield"]);
+assert.deepEqual(fakeName("PIP_NO_CACHE_DIR=1 pip install flask-csrf-shield"), ["flask-csrf-shield"]);
+assert.deepEqual(fakeName("pip --disable-pip-version-check install flask-csrf-shield"), ["flask-csrf-shield"]);
+assert.deepEqual(fakeName("pip --proxy http://p:8080 install flask-csrf-shield"), ["flask-csrf-shield"]);
+assert.deepEqual(
+  fakeName("cd /x && venv/bin/pip install --disable-pip-version-check --dry-run flask-csrf-shield 2>&1 | tail -4"),
+  ["flask-csrf-shield"]
+);
+assert.deepEqual(fakeName("./node_modules/.bin/npx cowsay hi"), ["cowsay"]);
+// Redirects are not packages.
+assert.deepEqual(fakeName("pip install flask > /tmp/pip.log 2>&1"), ["flask"]);
+assert.deepEqual(fakeName("pip install flask 2> err.txt"), ["flask"]);
+// Not installs: pip list, pip show, a pip path that is not followed by install.
+assert.deepEqual(fakeName("venv/bin/pip list"), []);
+assert.deepEqual(fakeName("venv/bin/pip show flask"), []);
+assert.deepEqual(fakeName("venv/bin/python -c 'import flask'"), []);
+
 // Parser: uv, npx, pnpm dlx, and bunx are install commands too.
 assert.deepEqual(findInstalls({ commands: ["uv add flask"] }), [
   { registry: "pypi", name: "flask", raw: "uv add flask" },
