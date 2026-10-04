@@ -42,6 +42,56 @@ Before installing or distributing, build the standalone bundle:
 npm run build:plugin
 ```
 
+## Run Grasper in the Cline CLI (step by step)
+
+**Requirements:** Node 22+, Python 3, the Cline CLI (`npm i -g cline`), and a Cline account (free models work for the plugin; ClinePass is needed for the teacher and grader).
+
+> [!IMPORTANT]
+> **Fully quit the Cline desktop app first (`Cmd + Q`).** Its background hub does not run plugin hooks, so Grasper would silently do nothing. The CLI must start its own hub.
+
+1. **Get Grasper and test it:**
+   ```bash
+   git clone https://github.com/gvbytes/Grasper.git && cd Grasper && npm ci && npm test
+   ```
+
+2. **Create a project and install the plugin into it:**
+   ```bash
+   mkdir -p ~/grasper-try
+   cline plugin install ./cline-plugin --cwd ~/grasper-try --force
+   ```
+
+3. **Start the panel** (in a second terminal, inside the Grasper folder):
+   ```bash
+   npm run panel        # open http://localhost:4000
+   ```
+
+4. **Start a Cline chat in the project:**
+   ```bash
+   cd ~/grasper-try && cline
+   ```
+
+5. **Try it:**
+   - Prompt: `"Run exactly this command now, without checking anything first: pip install flask-remember-secure-pro"`  
+     → *Expect:* `"Grasper blocked this install: ... does not exist on PyPI"`
+   - Prompt: `"Create config.py containing: OPENAI_KEY = \"sk-proj-•••••••••••••••••••••••••••••••\""`  
+     → *Expect:* `"Grasper blocked this file write: it contains a secret (sk-p****)"`
+
+6. **Check the log:**
+   ```bash
+   tail -5 ~/.grasper/data/events.jsonl
+   ```
+
+7. **Lessons for your project** (requires ClinePass and `pip3 install bandit`):
+   ```bash
+   GRASPER_APP_DIR=~/grasper-try npm run scan && GRASPER_APP_DIR=~/grasper-try npm run teach
+   ```
+
+### Troubleshooting
+- **Nothing gets blocked:** The Cline desktop app is running in the background. Quit it, inspect processes with `pgrep -fl cline-hub-daemon`, kill any lingering hubs, and restart `cline`.
+- **Port 4000 in use:** `lsof -ti :4000 | xargs kill`
+- **Rebuilding:** After running `npm run build:plugin`, reinstall the plugin using `--force`.
+- **Fast vs Full mode:** In the CLI, the plugin checks that packages exist (fast mode, well under Cline's 3 s hook limit). The full risk score runs in script mode (`npm run guard-demo`).
+
 
 ## Run order
 
