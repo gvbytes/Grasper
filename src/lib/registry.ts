@@ -7,11 +7,59 @@ export type RegistryCheck = {
   status: RegistryStatus;
   ageDays?: number; // Days since the first release.
   releaseCount?: number;
+  weeklyDownloads?: number; // Undefined when the download service fails.
+  hasInstallScript?: boolean; // npm only: preinstall/postinstall in the latest version.
+  hasLinks?: boolean; // A homepage or repository link exists.
   suggestion?: string; // "did you mean X" from the popular list.
+  signals: string[]; // Risk signals for packages that exist. Empty when clean.
+};
+
+// Metadata used for the signal rules. All fields optional: unknown means skip.
+export type PackageMeta = {
+  ageDays?: number;
+  releaseCount?: number;
+  weeklyDownloads?: number;
+  hasInstallScript?: boolean;
+  hasLinks?: boolean;
+  suggestion?: string;
 };
 
 const TIMEOUT_MS = 6000;
 const METADATA_TIMEOUT_MS = 3000;
+const NEW_PACKAGE_DAYS = 30;
+const FEW_RELEASES = 2;
+const LOW_WEEKLY_DOWNLOADS = 1000;
+
+// Risk signals for a package that exists. Two or more mean block. One means warning.
+export function computeSignals(meta: PackageMeta): string[] {
+  const signals: string[] = [];
+  if (meta.ageDays !== undefined && meta.ageDays < NEW_PACKAGE_DAYS) {
+    signals.push(`very new (${meta.ageDays} days old)`);
+  }
+  if (meta.releaseCount !== undefined && meta.releaseCount <= FEW_RELEASES) {
+    signals.push(`very few releases (${meta.releaseCount})`);
+  }
+  if (meta.weeklyDownloads !== undefined && meta.weeklyDownloads < LOW_WEEKLY_DOWNLOADS) {
+    signals.push(`low downloads (${meta.weeklyDownloads} per week)`);
+  }
+  if (meta.hasInstallScript === true) {
+    signals.push("install scripts (preinstall/postinstall)");
+  }
+  if (meta.hasLinks === false) {
+    signals.push("no homepage or repository");
+  }
+  if (meta.suggestion) {
+    signals.push(`near-typo of "${meta.suggestion}"`);
+  }
+  return signals;
+}
+
+// Two or more signals block the install. One signal warns. Zero signals allow.
+export function riskAction(signals: string[]): "block" | "warn" | "allow" {
+  if (signals.length >= 2) return "block";
+  if (signals.length === 1) return "warn";
+  return "allow";
+}
 
 // About 30 popular names per registry, for typo warnings.
 const POPULAR_PYPI = [
@@ -92,13 +140,42 @@ function daysSince(isoDate: string): number {
   return Math.floor(ms / 86_400_000);
 }
 
+// PyPI weekly downloads. Skip when the service fails.
+async function pypiWeeklyDownloads(name: string): Promise<number | undefined> {
+  try {
+    const result = await fetchJson(`https://pypistats.org/api/packages/${encodeURIComponent(name)}/recent`);
+    if (!result.ok) return undefined;
+    const body = result.body as { data?: { last_week?: number } };
+    const week = body.data?.last_week;
+    return typeof week === "number" ? week : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+// npm weekly downloads. Skip when the service fails.
+async function npmWeeklyDownloads(encoded: string): Promise<number | undefined> {
+  try {
+    const result = await fetchJson(`https://api.npmjs.org/downloads/point/last-week/${encoded}`);
+    if (!result.ok) return undefined;
+    const body = result.body as { downloads?: number };
+    return typeof body.downloads === "number" ? body.downloads : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 async function checkPypi(name: string): Promise<RegistryCheck> {
   const suggestion = findSuggestion(name, POPULAR_PYPI);
   try {
+    const downloadsPromise = pypiWeeklyDownloads(name); // Runs in parallel.
     const result = await fetchJson(`https://pypi.org/pypi/${encodeURIComponent(name)}/json`);
-    if (result.status === 404) return { status: "missing", suggestion };
-    if (!result.ok) return { status: "unknown", suggestion };
-    const body = result.body as { releases?: Record<string, { upload_time?: string }[]> };
+    if (result.status === 404) return { status: "missing", suggestion, signals: [] };
+    if (!result.ok) return { status: "unknown", suggestion, signals: [] };
+    const body = result.body as {
+      releases?: Record<string, { upload_time?: string }[]>;
+      info?: { home_page?: string | null; project_url?: string | null; project_urls?: Record<string, string> | null };
+    };
     const releases = body.releases ?? {};
     const releaseCount = Object.keys(releases).length;
     let oldest: number | undefined;
@@ -110,9 +187,15 @@ async function checkPypi(name: string): Promise<RegistryCheck> {
       }
     }
     const ageDays = oldest === undefined ? undefined : Math.floor((Date.now() - oldest) / 86_400_000);
-    return { status: "exists", ageDays, releaseCount, suggestion };
+    const info = body.info ?? {};
+    const hasLinks = Boolean(
+      info.home_page || info.project_url || (info.project_urls && Object.keys(info.project_urls).length > 0)
+    );
+    const weeklyDownloads = await downloadsPromise;
+    const meta = { ageDays, releaseCount, weeklyDownloads, hasLinks, suggestion };
+    return { status: "exists", ...meta, signals: computeSignals(meta) };
   } catch {
-    return { status: "unknown", suggestion };
+    return { status: "unknown", suggestion, signals: [] };
   }
 }
 
@@ -121,28 +204,42 @@ async function checkNpm(name: string): Promise<RegistryCheck> {
   try {
     // Scoped names need the slash encoded: @scope/name -> @scope%2Fname.
     const encoded = name.startsWith("@") ? name.replace("/", "%2F") : name;
-    // The /latest endpoint is a small document. Fast existence check.
+    // The /latest endpoint is a small document. Fast existence check and manifest.
     const latest = await fetchJson(`https://registry.npmjs.org/${encoded}/latest`);
-    if (latest.status === 404) return { status: "missing", suggestion };
-    if (!latest.ok) return { status: "unknown", suggestion };
+    if (latest.status === 404) return { status: "missing", suggestion, signals: [] };
+    if (!latest.ok) return { status: "unknown", suggestion, signals: [] };
+
+    const manifest = (latest.body ?? {}) as {
+      scripts?: Record<string, string>;
+      homepage?: string;
+      repository?: unknown;
+    };
+    const hasInstallScript = Boolean(
+      manifest.scripts && (manifest.scripts.preinstall || manifest.scripts.postinstall)
+    );
+    const hasLinks = Boolean(manifest.homepage || manifest.repository);
 
     // Age and release count need the full document. Best effort with a short timeout.
+    let ageDays: number | undefined;
+    let releaseCount: number | undefined;
+    const downloadsPromise = npmWeeklyDownloads(encoded); // Runs in parallel.
     try {
       const full = await fetchJson(`https://registry.npmjs.org/${encoded}`, true, METADATA_TIMEOUT_MS);
       if (full.ok) {
         const body = full.body as { time?: Record<string, string> };
         const time = body.time ?? {};
         const created = time.created;
-        const releaseCount = Math.max(0, Object.keys(time).length - 2); // Minus created and modified.
-        const ageDays = created ? daysSince(created) : undefined;
-        return { status: "exists", ageDays, releaseCount, suggestion };
+        releaseCount = Math.max(0, Object.keys(time).length - 2); // Minus created and modified.
+        ageDays = created ? daysSince(created) : undefined;
       }
     } catch {
       // Metadata is nice to have. Existence is already confirmed.
     }
-    return { status: "exists", suggestion };
+    const weeklyDownloads = await downloadsPromise;
+    const meta = { ageDays, releaseCount, weeklyDownloads, hasInstallScript, hasLinks, suggestion };
+    return { status: "exists", ...meta, signals: computeSignals(meta) };
   } catch {
-    return { status: "unknown", suggestion };
+    return { status: "unknown", suggestion, signals: [] };
   }
 }
 
@@ -156,16 +253,5 @@ export async function checkPackage(registry: "pypi" | "npm", name: string): Prom
   const check = registry === "pypi" ? await checkPypi(name) : await checkNpm(name);
   cache.set(key, check);
   return check;
-}
-
-// Suspicion rules from the spec. Warnings only, never blocks.
-export function suspicionReasons(check: RegistryCheck): string[] {
-  const reasons: string[] = [];
-  if (check.ageDays !== undefined && check.ageDays < 30) reasons.push(`very new (${check.ageDays} days old)`);
-  if (check.releaseCount !== undefined && check.releaseCount <= 3) {
-    reasons.push(`very few releases (${check.releaseCount})`);
-  }
-  if (check.suggestion) reasons.push(`close to the popular package "${check.suggestion}"`);
-  return reasons;
 }
 

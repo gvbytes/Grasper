@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { extractCommandStrings, findInstalls, hasCurlPipeSh } from "../lib/install-parser.js";
-import { checkPackage, editDistance, findSuggestion } from "../lib/registry.js";
+import { checkPackage, computeSignals, editDistance, findSuggestion, riskAction } from "../lib/registry.js";
 
 // Parser: all accepted input shapes produce the same command strings.
 assert.deepEqual(extractCommandStrings({ commands: ["pip install flask", "ls"] }), ["pip install flask", "ls"]);
@@ -45,6 +45,35 @@ assert.equal(editDistance("requets", "requests"), 1);
 assert.equal(findSuggestion("requets", ["requests", "flask"]), "requests");
 assert.equal(findSuggestion("requests", ["requests", "flask"]), undefined);
 
+// Signal rules, unit-tested with fake metadata. A real brand-new package is
+// not reliably findable, so the scoring is checked deterministically here.
+
+// Clean metadata: zero signals, allow.
+assert.deepEqual(computeSignals({ ageDays: 900, releaseCount: 40, weeklyDownloads: 5_000_000, hasLinks: true }), []);
+assert.equal(riskAction([]), "allow");
+
+// Each signal fires on its own.
+assert.deepEqual(computeSignals({ ageDays: 5 }), ["very new (5 days old)"]);
+assert.deepEqual(computeSignals({ releaseCount: 2 }), ["very few releases (2)"]);
+assert.deepEqual(computeSignals({ weeklyDownloads: 12 }), ["low downloads (12 per week)"]);
+assert.deepEqual(computeSignals({ hasInstallScript: true }), ["install scripts (preinstall/postinstall)"]);
+assert.deepEqual(computeSignals({ hasLinks: false }), ["no homepage or repository"]);
+assert.deepEqual(computeSignals({ suggestion: "requests" }), ['near-typo of "requests"']);
+
+// Unknown fields are skipped, never guessed.
+assert.deepEqual(computeSignals({}), []);
+assert.deepEqual(computeSignals({ ageDays: 60, releaseCount: 5 }), []);
+
+// A brand-new one-release package with no links and no downloads: four signals, block.
+const brandNew = computeSignals({ ageDays: 3, releaseCount: 1, weeklyDownloads: 4, hasLinks: false });
+assert.equal(brandNew.length, 4);
+assert.equal(riskAction(brandNew), "block");
+
+// One signal means warning. Two or more mean block.
+assert.equal(riskAction(["very new (5 days old)"]), "warn");
+assert.equal(riskAction(["very new (5 days old)", "very few releases (1)"]), "block");
+assert.equal(riskAction(["a", "b", "c"]), "block");
+
 // Registry: live checks with real network.
 const flask = await checkPackage("pypi", "flask");
 assert.equal(flask.status, "exists");
@@ -62,5 +91,10 @@ assert.equal(react.status, "exists");
 
 const fakeNpm = await checkPackage("npm", "react-secure-remember-pro");
 assert.equal(fakeNpm.status, "missing");
+
+// Well-known packages pass with zero risk signals.
+assert.deepEqual(flask.signals, [], `flask signals must be empty, got: ${JSON.stringify(flask.signals)}`);
+assert.deepEqual(react.signals, [], `react signals must be empty, got: ${JSON.stringify(react.signals)}`);
+assert.ok((flask.weeklyDownloads ?? 1_000_000) >= 1000, "flask downloads known or high");
 
 console.log("ALL LIB TESTS PASSED");

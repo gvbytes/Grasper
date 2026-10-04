@@ -1,5 +1,5 @@
 import { findInstalls, hasCurlPipeSh, type InstallRequest } from "../lib/install-parser.js";
-import { checkPackage, suspicionReasons } from "../lib/registry.js";
+import { checkPackage, riskAction } from "../lib/registry.js";
 import { findSecrets, isEnvFile, type SecretMatch } from "../lib/secrets.js";
 import type { GrasperEvent } from "../lib/store.js";
 
@@ -77,14 +77,28 @@ async function evaluateInstall(
       detail: { registry: install.registry, package: install.name },
     });
   } else {
-    const reasons = suspicionReasons(check);
-    if (reasons.length > 0) {
-      const warning = `Grasper warning: "${install.name}" exists but looks suspicious: ${reasons.join(", ")}.`;
+    // The package exists. Score its risk signals. Two or more block. One warns.
+    const signals = check.signals;
+    const action = riskAction(signals);
+    if (action === "block") {
+      const reason =
+        `Grasper blocked this install: "${install.name}" exists but shows ${signals.length} risk signals: ` +
+        `${signals.join("; ")}. Fake or hijacked packages often look like this. ` +
+        `Pick a well-known package instead.`;
+      events.push({
+        ts: new Date().toISOString(), source: "guard", kind: "block",
+        summary: `BLOCKED install of "${install.name}": ${signals.join("; ")}`,
+        detail: { registry: install.registry, package: install.name, signals },
+      });
+      return { blockReason: reason, warnings };
+    }
+    if (action === "warn") {
+      const warning = `Grasper warning: "${install.name}" shows one risk signal: ${signals[0]}.`;
       warnings.push(warning);
       events.push({
         ts: new Date().toISOString(), source: "guard", kind: "warn",
-        summary: `WARNING: suspicious package "${install.name}": ${reasons.join(", ")}`,
-        detail: { registry: install.registry, package: install.name, reasons },
+        summary: `WARNING: package "${install.name}": ${signals[0]}`,
+        detail: { registry: install.registry, package: install.name, signals },
       });
     }
   }

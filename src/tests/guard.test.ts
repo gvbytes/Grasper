@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createGrasperPlugin } from "../plugin/index.js";
 import { evaluateFileWrite, evaluateRunCommands, newGuardState } from "../plugin/guard.js";
-import { suspicionReasons } from "../lib/registry.js";
+import { computeSignals, riskAction } from "../lib/registry.js";
 
 // These tests hit the real PyPI and npm registries. 2500 ms timeout each.
 
@@ -69,12 +69,16 @@ import { suspicionReasons } from "../lib/registry.js";
   assert.equal(verdict.action, "allow");
 }
 
-// 8. Suspicion rules produce warnings, never blocks.
+// 8. Signal scoring: two signals block the install, one warns, zero allows.
 {
-  const reasons = suspicionReasons({ status: "exists", ageDays: 5, releaseCount: 2, suggestion: "requests" });
-  assert.equal(reasons.length, 3);
-  const none = suspicionReasons({ status: "exists", ageDays: 900, releaseCount: 40 });
+  const two = computeSignals({ ageDays: 5, releaseCount: 2, suggestion: "requests" });
+  assert.equal(two.length, 3);
+  assert.equal(riskAction(two), "block");
+  const one = computeSignals({ weeklyDownloads: 12 });
+  assert.equal(riskAction(one), "warn");
+  const none = computeSignals({ ageDays: 900, releaseCount: 40 });
   assert.equal(none.length, 0);
+  assert.equal(riskAction(none), "allow");
 }
 
 // 9. The plugin hook wires everything: a fake install through beforeTool returns skip.
