@@ -73,7 +73,7 @@ npm run build:plugin
 5. **Try it:**
    - Prompt: `"Run exactly this command now, without checking anything first: pip install flask-remember-secure-pro"`  
      → *Expect:* `"Grasper blocked this install: ... does not exist on PyPI"`
-   - Prompt: `"Create config.py containing: OPENAI_KEY = \"sk-proj-•••••••••••••••••••••••••••••••\""`  
+   - Prompt: `"Create config.py containing: OPENAI_KEY = \"sk-proj-abc123rrthsoBIDISnsnuos\""`  
      → *Expect:* `"Grasper blocked this file write: it contains a secret (sk-p****)"`
 
 6. **Check the log:**
