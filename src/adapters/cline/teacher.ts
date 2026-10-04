@@ -4,6 +4,7 @@ import type { Grade, Lesson } from "../../lib/lessons.js";
 import { getClinePassKey } from "./auth.js";
 import type { Decision } from "../../plugin/guard.js";
 import type { Finding } from "../../lib/findings.js";
+import { type AppContext, listAppFiles, readFileRange, searchCode } from "../../lib/codebase.js";
 
 // The teacher is a Cline SDK Agent. It never invents findings.
 // It explains real findings and real decisions, against the real code.
@@ -17,12 +18,58 @@ const STYLE = `Writing rules:
 - Explain like the reader has never seen the concept. Define every term.
 - Reference real file names and line numbers from the code given to you.`;
 
+// Read-only codebase tools. Every path stays inside the app folder; secrets and data files are refused.
+function codebaseTools(root: string) {
+  return [
+    createTool({
+      name: "list_files",
+      description: "List the app's source files with line counts. Optional folder prefix to narrow it.",
+      inputSchema: z.object({ prefix: z.string().optional().describe("Only files whose path starts with this.") }),
+      execute: async (input: { prefix?: string }) => {
+        const files = await listAppFiles(root);
+        const shown = files.filter((f) => !input.prefix || f.path.startsWith(input.prefix)).slice(0, 300);
+        return shown.map((f) => `${f.path} (${f.lines} lines)`).join("\n") || "No files.";
+      },
+    }),
+    createTool({
+      name: "read_file",
+      description: "Read numbered lines from one app file (max 300 lines per call). Use it before you cite code.",
+      inputSchema: z.object({
+        path: z.string().describe("Path relative to the app folder, as shown in the repo map."),
+        start_line: z.number().optional(),
+        end_line: z.number().optional(),
+      }),
+      execute: async (input: { path: string; start_line?: number; end_line?: number }) =>
+        readFileRange(root, input.path, input.start_line ?? 1, input.end_line),
+    }),
+    createTool({
+      name: "search_code",
+      description: "Search every app file for a regex or text. Returns file:line matches.",
+      inputSchema: z.object({ query: z.string() }),
+      execute: async (input: { query: string }) => searchCode(root, input.query),
+    }),
+  ];
+}
+
+// The code section of a prompt: the whole source for small apps, the repo map for large ones.
+function codeSection(app: AppContext): string {
+  if (app.mode === "full") return `## App source\n${app.text}`;
+  return `## Repo map (large codebase: ${app.fileCount} files, too big to include whole)
+${app.text}
+
+How to read this codebase:
+- Use read_file to read the exact lines you explain. Never cite code you have not read.
+- Start with files named in the scan findings and guard events, then the files behind the logged decisions, then the entry points (main app file, routes).
+- Use search_code to find where something is defined or used.`;
+}
+
 // Generate lessons from the real build data.
 export async function generateLessons(input: {
   decisions: Decision[];
   findings: Finding[];
   guardEvents: { kind: string; summary: string }[]; // Blocks and warnings Grasper raised.
-  source: string; // Concatenated demo-app source with file names.
+  app: AppContext; // Full source (small apps) or repo map (large apps).
+  appDir: string; // Absolute app folder for the read tools.
 }): Promise<Lesson[]> {
   let submitted: Lesson[] | undefined;
 
@@ -59,9 +106,9 @@ export async function generateLessons(input: {
 ${STYLE}
 Rules:
 - Lesson 1 is always "How your app works", for a complete beginner:
-  - one line per file: what the file is for
-  - one line per route/page: what it does
-  - then trace one real request step by step (the login), from the browser form, to the route in app.py, to the database, and back to the page, with file and line numbers
+  - one line per file: what the file is for. If the app has more than 25 files, describe each main folder and the 10 most important files instead
+  - one line per route/page: what it does (for a large app, the main ones)
+  - then trace one real request step by step (the login if there is one), from the browser form, to the route, to the database, and back to the page, with file and line numbers
   - risk_level low, security false, and an explain-back question asking the user to describe that flow in their own words.
 - After lesson 1, write one lesson per high or medium finding, riskiest first.
 - Write one lesson about any blocked install or blocked secret: what Grasper stopped and why.
@@ -70,8 +117,9 @@ Rules:
 - Each lesson ends with one explain-back question the user must answer in their own words.
 - Give each lesson a short descriptive id that names its topic, like sql-injection-login. Never use generic ids like lesson-2.
 - Call submit_lessons at the end. Do not answer in plain text.`,
-    tools: [submitTool],
-    maxIterations: 8,
+    tools: [...codebaseTools(input.appDir), submitTool],
+    // Large codebases need turns to read files before writing.
+    maxIterations: input.app.mode === "map" ? 40 : 12,
   });
 
   const prompt = `Here is the app, the decisions, the guard events, and the scan findings.
@@ -85,8 +133,7 @@ ${input.guardEvents.map((g) => `- [${g.kind}] ${g.summary}`).join("\n") || "(non
 ## Scan findings
 ${input.findings.map((f) => `- [${f.severity}] ${f.title} (${f.source}${f.file ? `, ${f.file}${f.line ? `:${f.line}` : ""}` : ""})`).join("\n") || "(none)"}
 
-## App source
-${input.source}
+${codeSection(input.app)}
 
 Write the lessons now. Call submit_lessons when done.`;
 
@@ -103,7 +150,8 @@ Write the lessons now. Call submit_lessons when done.`;
 export async function gradeExplainBack(input: {
   lesson: Lesson;
   answer: string;
-  source: string;
+  app: AppContext;
+  appDir: string;
 }): Promise<Grade> {
   let submitted: Grade | undefined;
 
@@ -133,9 +181,10 @@ Rules:
 - Grade the answer against the real code, not against the lesson text.
 - Security understanding counts most. A wrong security claim caps the score at 40.
 - got_right and missed list short, concrete points.
+- If you only have a repo map, read the lesson's files with read_file before grading.
 - Call submit_grade at the end. Do not answer in plain text.`,
-    tools: [submitTool],
-    maxIterations: 6,
+    tools: [...codebaseTools(input.appDir), submitTool],
+    maxIterations: input.app.mode === "map" ? 20 : 8,
   });
 
   const prompt = `Lesson: ${input.lesson.title}
@@ -144,8 +193,9 @@ Question: ${input.lesson.question}
 The user's answer:
 ${input.answer}
 
-The real code:
-${input.source}
+Files this lesson refers to: ${input.lesson.file_refs.map((r) => `${r.path}:${r.lines}`).join(", ") || "(none)"}
+
+${input.app.mode === "full" ? `The real code:\n${input.app.text}` : codeSection(input.app)}
 
 Grade the answer. Call submit_grade when done.`;
 

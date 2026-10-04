@@ -1,8 +1,8 @@
-import { appendEvent, readEvents, readJson, writeJson } from "./lib/store.js";
+import { appendEvent, demoAppDir, readEvents, readJson, writeJson } from "./lib/store.js";
 import type { Finding } from "./lib/findings.js";
 import type { Decision } from "./plugin/guard.js";
 import { generateLessons } from "./adapters/cline/teacher.js";
-import { readAppSource } from "./lib/source.js";
+import { getAppContext } from "./lib/codebase.js";
 
 // Runs the teacher after the build and the scan.
 // Reads decisions from the event log, findings from the scan, and the app source.
@@ -24,14 +24,15 @@ const { findings } = await readJson<{ findings: Finding[] }>("findings", { findi
 const guardEvents = events
   .filter((event) => ["block", "warn", "seeded_weakness"].includes(event.kind))
   .map((event) => ({ kind: event.kind, summary: event.summary }));
-const source = await readAppSource();
+// Small apps: whole source. Large apps: repo map + read/search tools.
+const app = await getAppContext(demoAppDir);
 
 console.log(
-  `Teacher input: ${decisions.length} decisions, ${guardEvents.length} guard events, ${findings.length} findings, ${source.length} chars of source.`
+  `Teacher input: ${decisions.length} decisions, ${guardEvents.length} guard events, ${findings.length} findings, ${app.fileCount} files, ${app.mode} mode.`
 );
 
 try {
-  const lessons = await generateLessons({ decisions, findings, guardEvents, source });
+  const lessons = await generateLessons({ decisions, findings, guardEvents, app, appDir: demoAppDir });
   await writeJson("lessons", { lessons });
   for (const lesson of lessons) {
     await appendEvent({
