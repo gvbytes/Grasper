@@ -108,8 +108,8 @@ createServer(async (req, res) => {
     res.writeHead(500, { "content-type": "application/json" });
     res.end(JSON.stringify({ error: error instanceof Error ? error.message : String(error) }));
   }
-}).listen(PORT, () => {
-  console.log(`Grasper panel: http://localhost:${PORT}`);
+}).listen(PORT, "127.0.0.1", () => {
+  console.log(`Grasper panel: http://127.0.0.1:${PORT}`);
 });
 
 function readBody(req: import("node:http").IncomingMessage): Promise<string> {

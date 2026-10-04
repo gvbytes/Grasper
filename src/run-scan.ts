@@ -3,7 +3,7 @@ import { readFile, readdir } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { promisify } from "node:util";
 import { checkPackage } from "./lib/registry.js";
-import { appendEvent, demoAppDir, writeJson } from "./lib/store.js";
+import { appendEvent, demoAppDir, readJson, writeJson } from "./lib/store.js";
 import type { Finding } from "./lib/findings.js";
 
 // Scans the demo app after the build.
@@ -156,12 +156,32 @@ const findings: Finding[] = [
   ...(await checkSecretKey()),
 ];
 
+// Compare with the previous scan. Report new findings and fixed ones once.
+const previous = await readJson<{ findings: Finding[] }>("findings", { findings: [] });
+const previousIds = new Map(previous.findings.map((f) => [f.id, f]));
+
 await writeJson("findings", { findings });
+
+const now = new Date().toISOString();
 for (const finding of findings) {
+  if (previousIds.has(finding.id)) continue; // Already reported. No duplicate events.
   await appendEvent({
-    ts: new Date().toISOString(), source: "scan", kind: "finding",
+    ts: now, source: "scan", kind: "finding",
     summary: `[${finding.severity.toUpperCase()}] ${finding.title}`,
     detail: { ...finding },
   });
 }
+for (const old of previous.findings) {
+  if (findings.some((f) => f.id === old.id)) continue;
+  await appendEvent({
+    ts: now, source: "scan", kind: "finding_fixed",
+    summary: `FIXED: ${old.title}`,
+    detail: { ...old },
+  });
+}
+await appendEvent({
+  ts: now, source: "scan", kind: "scan_summary",
+  summary: `Scan complete: ${findings.length} findings (${findings.filter((f) => f.severity === "high").length} high).`,
+  detail: {},
+});
 console.log(`Scan complete: ${findings.length} findings (${findings.filter((f) => f.severity === "high").length} high).`);
