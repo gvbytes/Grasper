@@ -56,11 +56,23 @@ const VALUE_FLAGS = new Set([
   "--registry", "--cache-dir", "--proxy",
 ]);
 
+// Strip matching quotes around a token: 'Flask[async]>=3' -> Flask[async]>=3.
+function stripQuotes(token: string): string {
+  if (token.length >= 2) {
+    const first = token[0];
+    const last = token[token.length - 1];
+    if ((first === "'" && last === "'") || (first === '"' && last === '"')) {
+      return token.slice(1, -1);
+    }
+  }
+  return token;
+}
+
 // Collect package names from the words after "install"/"add".
 function collectPackages(words: string[], raw: string, registry: "pypi" | "npm"): InstallRequest[] {
   const found: InstallRequest[] = [];
   for (let i = 0; i < words.length; i++) {
-    const word = words[i];
+    const word = stripQuotes(words[i]);
     if (isFlag(word)) {
       // Skip the flag value too, unless the flag already carries it (--flag=value).
       if (!word.includes("=") && VALUE_FLAGS.has(word)) i++;

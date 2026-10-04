@@ -11,6 +11,14 @@ assert.deepEqual(extractCommandStrings({ command: "pip", args: ["install", "flas
 assert.deepEqual(extractCommandStrings("pip install flask"), ["pip install flask"]);
 assert.deepEqual(extractCommandStrings(["pip install flask", { command: "ls" }]), ["pip install flask", "ls"]);
 
+// Parser: quoted package specs still parse. 'Flask[async]>=3' is just flask.
+assert.deepEqual(findInstalls({ commands: ["pip install 'Flask[async]>=3'"] }), [
+  { registry: "pypi", name: "flask", raw: "pip install 'Flask[async]>=3'" },
+]);
+assert.deepEqual(findInstalls({ commands: ['pip install "requests"'] }), [
+  { registry: "pypi", name: "requests", raw: 'pip install "requests"' },
+]);
+
 // Parser: find installs across pip and npm forms.
 assert.deepEqual(findInstalls({ commands: ["pip install flask==3.0 requests"] }), [
   { registry: "pypi", name: "flask", raw: "pip install flask==3.0 requests" },

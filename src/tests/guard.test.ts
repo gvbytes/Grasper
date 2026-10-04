@@ -33,6 +33,15 @@ import { computeSignals, riskAction } from "../lib/registry.js";
   assert.equal(verdict.action, "allow");
 }
 
+// 3b. Quoted specs parse as the real package and pass: 'Flask[async]>=3' is flask.
+{
+  const state = newGuardState();
+  state.decisions.push({ topic: "package", choice: "flask", reason: "Web framework.", packageName: "flask" });
+  const verdict = await evaluateRunCommands({ commands: ["pip install 'Flask[async]>=3'"] }, state);
+  assert.equal(verdict.action, "allow");
+  assert.equal(verdict.events.length, 0, `no guard events expected, got: ${JSON.stringify(verdict.events)}`);
+}
+
 // 4. curl | sh: hard block.
 {
   const state = newGuardState();
