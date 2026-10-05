@@ -380,7 +380,7 @@ The teacher and the grader pick a mode automatically (`src/lib/codebase.ts`):
 
 ClinePass enforces a 5-hour usage limit per account. The builder, teacher, grader, smoke test and
 guard demo all use it. If you hit the limit mid-demo, switch the panel to snapshot mode
-(`npm run snapshot` beforehand) and use the recorded demo video.
+(`npm run snapshot` beforehand).
 
 ---
 
